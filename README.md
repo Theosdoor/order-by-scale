@@ -49,15 +49,25 @@ Position:  0      1      2      3      4
 - Original Loss: `0.651`
 - Mean Pattern Ablated Loss: `0.652`
 
-### Zeroing out individual attn scores
-
-### Key Findings so far
+**This suggests that...**
 - Replacing individual attention patterns with mean patterns has minimal impact on loss
 - Suggests the model relies on **positional structure** rather than specific digit values
 - The compression mechanism appears to be digit-agnostic
+
+### Zeroing out individual attn scores
+
+<!-- ### Key Findings so far
+ -->
 
 ## Next Steps
 1. Test specific attention position ablations
 2. Analyze value vector contributions
 3. Investigate the compressed representation structure
 4. Map out the algorithmic circuits learned by the model
+
+## Key Resources
+* [Tips for Empirical Alignment Research](https://www.lesswrong.com/posts/dZFpEdKyb9Bf4xYn7/tips-for-empirical-alignment-research)
+* [TransformerLens](https://github.com/TransformerLensOrg/TransformerLens)
+      * [Main demo](https://colab.research.google.com/github/neelnanda-io/TransformerLens/blob/main/demos/Main_Demo.ipynb#scrollTo=kCXUl7BUPv08)
+* [Mechinterp glossary](https://dynalist.io/d/n2ZWtnoYHrU1s4vnFSAQ519J)
+* [Grokking mechinterp paper](https://arxiv.org/pdf/2301.05217)
