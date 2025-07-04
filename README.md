@@ -1,32 +1,63 @@
-# Mech interp of a simple attn-only transformer for list compression / decompression
+# Mechanistic Interpretability of Simple Attention-Only Transformer
 
-Input = [i1, i2, SPECIAL, o1, o2]
-Layer 0 = list compress into special token
-Layer 1 = decompress into output tokens
+A study of list compression/decompression using a minimal transformer architecture.
 
+## Model Architecture
+- **Input format**: `[i1, i2, SPECIAL, o1, o2]`
+- **Layer 0**: Compresses list into special token representation
+- **Layer 1**: Decompresses special token into output tokens
+- **Configuration**: 2-layer, attention-only (no MLP), single head per layer
 
 ## TODO
-* Get attn maps for both layers
-* zero out individual entries (in each layer!)
+- [x] Get attention maps for both layers
+- [ ] Zero out individual entries in each layer
+- [ ] Analyze embedding/unembedding matrices with PCA
+- [ ] Test with different list lengths
+- [ ] Check Neel's grokking paper formulas
 
+## Experimental Results so far
 
-## Results so far
-(where sample input is [8, 3, 10, 8, 3])
+### Sample Input
+```
+[8, 3, 10, 8, 3]
+```
+Where `10` is the special separator token.
 
-### Mean attention pattern
-Mean pattern calculated: 
-[1.         0.         0.         0.         0.        ]
-[0.01445366 0.98554623 0.         0.         0.        ]
-[0.03167263 0.43538564 0.5329417  0.         0.        ]
-[0.         0.         0.84494275 0.15505722 0.        ]
-[0.         0.         0.44315127 0.24488218 0.3119666 ]
+### Mean Attention Pattern Analysis
 
-Original pattern: 
-[1.         0.         0.         0.         0.        ]
-[0.01287321 0.98712677 0.         0.         0.        ]
-[0.02960602 0.3908043  0.5795897  0.         0.        ]
-[0.         0.         0.7891883  0.21081167 0.        ]
-[0.         0.         0.31488845 0.19573739 0.48937416]
+**Layer 0 - Mean Pattern:**
+```
+Position:  0      1      2      3      4
+      0 [1.000  0.000  0.000  0.000  0.000]
+      1 [0.014  0.986  0.000  0.000  0.000]
+      2 [0.032  0.435  0.533  0.000  0.000]
+      3 [0.000  0.000  0.845  0.155  0.000]
+      4 [0.000  0.000  0.443  0.245  0.312]
+```
 
-Original Loss: 0.651
-Ablated Loss (Using Mean Attention Pattern): 0.652
+**Layer 0 - Sample Pattern:**
+```
+Position:  0      1      2      3      4
+      0 [1.000  0.000  0.000  0.000  0.000]
+      1 [0.013  0.987  0.000  0.000  0.000]
+      2 [0.030  0.391  0.580  0.000  0.000]
+      3 [0.000  0.000  0.789  0.211  0.000]
+      4 [0.000  0.000  0.315  0.196  0.489]
+```
+
+**Loss Comparison:**
+- Original Loss: `0.651`
+- Mean Pattern Ablated Loss: `0.652`
+
+### Zeroing out individual attn scores
+
+### Key Findings so far
+- Replacing individual attention patterns with mean patterns has minimal impact on loss
+- Suggests the model relies on **positional structure** rather than specific digit values
+- The compression mechanism appears to be digit-agnostic
+
+## Next Steps
+1. Test specific attention position ablations
+2. Analyze value vector contributions
+3. Investigate the compressed representation structure
+4. Map out the algorithmic circuits learned by the model
