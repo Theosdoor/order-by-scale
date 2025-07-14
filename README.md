@@ -2,6 +2,8 @@
 
 A study of list compression/decompression using a minimal transformer architecture.
 
+PROJECT DIARY (google doc) [here](https://docs.google.com/document/d/1F5Owx5ZKag53pKteuNuVFJ0ztzYpuZwwJYqbJd-9rog/edit?usp=sharing).
+
 ## Model Architecture
 - **Input format**: `[i1, i2, SPECIAL, o1, o2]`
 - **Layer 0**: Compresses list into special token representation
