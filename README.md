@@ -68,8 +68,8 @@ Position:  0      1      2      3      4
 4. Map out the algorithmic circuits learned by the model
 
 ## Key Resources
-- [Tips for Empirical Alignment Research](https://www.lesswrong.com/posts/dZFpEdKyb9Bf4xYn7/tips-for-empirical-alignment-research)
-- [TransformerLens](https://github.com/TransformerLensOrg/TransformerLens)
-  - [Main demo](https://colab.research.google.com/github/neelnanda-io/TransformerLens/blob/main/demos/Main_Demo.ipynb#scrollTo=kCXUl7BUPv08)
-- [Mechinterp glossary](https://dynalist.io/d/n2ZWtnoYHrU1s4vnFSAQ519J)
-- [Grokking mechinterp paper](https://arxiv.org/pdf/2301.05217)
+- [Tips for Empirical Alignment Research](https://www.lesswrong.com/posts/dZFpEdKyb9Bf4xYn7/tips-for-empirical-alignment-research){:target="_blank"}
+- [TransformerLens](https://github.com/TransformerLensOrg/TransformerLens){:target="_blank"}
+  - [Main demo](https://colab.research.google.com/github/neelnanda-io/TransformerLens/blob/main/demos/Main_Demo.ipynb#scrollTo=kCXUl7BUPv08){:target="_blank"}
+- [Mechinterp glossary](https://dynalist.io/d/n2ZWtnoYHrU1s4vnFSAQ519J){:target="_blank"}
+- [Grokking mechinterp paper](https://arxiv.org/pdf/2301.05217){:target="_blank"}
