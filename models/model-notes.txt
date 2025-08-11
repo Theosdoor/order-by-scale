@@ -1,0 +1,6 @@
+v1
+v2 - use PAD
+
+
+Specific
+* v2_3layer_100dig_16d - 100% acc
