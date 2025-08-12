@@ -14,10 +14,8 @@ N_DIGITS = 100
 DIGITS = list(range(N_DIGITS)) # 100 digits from 0 to 99
 PAD = N_DIGITS # special padding token
 SEP = N_DIGITS + 1 # special seperator token for the model to think about the input (+1 to avoid confusion with the last digit)
-TRAIN_SPLIT = 0.8 # 80% train, 20% test
 
-# For backward compatibility with older versions
-USE_PAD = True # whether to use the PAD token in the input sequences (or just SEP)
+TRAIN_SPLIT = 0.8 # 80% train, 20% test
 
 DEV = (
     "cuda"
@@ -27,6 +25,8 @@ DEV = (
 device = DEV
 torch.manual_seed(0)
 
+# For backward compatibility with v1
+USE_PAD = True # whether to use the PAD token in the input sequences (or just SEP)
 
 # %%
 def get_dataset():
@@ -60,7 +60,7 @@ def get_dataset():
 
 # %%
 if __name__ == "__main__":
-    DATASET_NAME = f"listlen{LIST_LEN}_digits{N_DIGITS}_{'nodupes' if NO_DUPES else 'dupes'}_{'usePAD' if USE_PAD else 'noPAD'}"
+    DATASET_NAME = f"listlen{LIST_LEN}_digits{N_DIGITS}_{'nodupes' if NO_DUPES else 'dupes'}{'_noPAD' if not USE_PAD else ''}"
     DATASET_PATH = f"data/{DATASET_NAME}.pt"
 
     if os.path.exists(DATASET_PATH):

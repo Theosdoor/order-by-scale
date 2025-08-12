@@ -1,8 +1,8 @@
-v1
+v1 (deprecated)
 v2+ - usePAD = True
 v3 - NO_DUPES = True
 
 
 Specific
-v2_3layer_100dig_16d - 100% acc
-v3_3layer_100dig_16d_NoDupes - 83.86% ac
+v1_2layer_100dig_32d - 82% accuracy
+v2_2layer_100dig_128d - 92% accuracy
