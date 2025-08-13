@@ -102,45 +102,52 @@ print(mask_bias.cpu()[0][0])
 
 # %%
 
+def get_data():
+    # Create all possible combinations of digits
+    all_data = list(itertools.product(DIGITS, repeat=LIST_LEN))
+    n_data = len(all_data)
+    all_data = torch.tensor(all_data, dtype=torch.int64)
+
+    # Create sequences of the form [d1, d2, SEP, d1, d2]
+    all_targets = torch.full((n_data, SEQ_LEN), SEP)
+    all_targets[:, :LIST_LEN] = all_data
+    all_targets[:, LIST_LEN + 1 :] = all_data
+
+    # Create input sequences of the form [d1, d2, SEP, PAD, PAD]
+    all_inputs = all_targets.clone()
+    all_inputs[:, LIST_LEN + 1 :] = PAD
+    return(all_data, all_inputs)
+
+
 # ---------- data ----------
-# Create all possible combinations of digits
-all_data = list(itertools.product(DIGITS, repeat=LIST_LEN))
-n_data = len(all_data)
-all_data = torch.tensor(all_data, dtype=torch.int64)
+if __name__ == "__main__":
+    all_targets, all_inputs = get_data()
+    n_data = all_targets.size(0)
 
-# Create sequences of the form [d1, d2, SEP, d1, d2]
-all_targets = torch.full((n_data, SEQ_LEN), SEP)
-all_targets[:, :LIST_LEN] = all_data
-all_targets[:, LIST_LEN + 1 :] = all_data
+    # Shuffle the dataset (inputs and targets together)
+    torch.manual_seed(42)
+    perm = torch.randperm(n_data)
+    all_inputs = all_inputs[perm]
+    all_targets = all_targets[perm]
 
-# Create input sequences of the form [d1, d2, SEP, PAD, PAD]
-all_inputs = all_targets.clone()
-all_inputs[:, LIST_LEN + 1 :] = PAD
+    train_ds = TensorDataset(
+        all_inputs[: int(TRAIN_SPLIT * n_data)], all_targets[: int(TRAIN_SPLIT * n_data)]
+    )  # 80% for training
+    val_ds = TensorDataset(
+        all_inputs[int(TRAIN_SPLIT * n_data) :], all_targets[int(TRAIN_SPLIT * n_data) :]
+    )  # 20% for validation
+    train_batch_size = min(
+        128, len(train_ds)
+    )  # Use a batch size of 128 or less if dataset is smaller
+    val_batch_size = min(
+        256, len(val_ds)
+    )  # Use a batch size of 256 or less if dataset is smaller
+    train_dl = DataLoader(train_ds, train_batch_size, shuffle=True, drop_last=True)
+    val_dl = DataLoader(val_ds, val_batch_size, drop_last=False)
 
-# Shuffle the dataset (inputs and targets together)
-torch.manual_seed(42)
-perm = torch.randperm(n_data)
-all_inputs = all_inputs[perm]
-all_targets = all_targets[perm]
-
-train_ds = TensorDataset(
-    all_inputs[: int(TRAIN_SPLIT * n_data)], all_targets[: int(TRAIN_SPLIT * n_data)]
-)  # 80% for training
-val_ds = TensorDataset(
-    all_inputs[int(TRAIN_SPLIT * n_data) :], all_targets[int(TRAIN_SPLIT * n_data) :]
-)  # 20% for validation
-train_batch_size = min(
-    128, len(train_ds)
-)  # Use a batch size of 128 or less if dataset is smaller
-val_batch_size = min(
-    256, len(val_ds)
-)  # Use a batch size of 256 or less if dataset is smaller
-train_dl = DataLoader(train_ds, train_batch_size, shuffle=True, drop_last=True)
-val_dl = DataLoader(val_ds, val_batch_size, drop_last=False)
-
-print("Input:", train_ds[0][0])  # Example input: [d1, d2, SEP, SEP, SEP]
-print("Target:", train_ds[0][1])  # Example target: [d1, d2, SEP, d1, d2]
-len(train_ds), len(val_ds)  # Should be 80% for train and 20% for validation
+    print("Input:", train_ds[0][0])  # Example input: [d1, d2, SEP, SEP, SEP]
+    print("Target:", train_ds[0][1])  # Example target: [d1, d2, SEP, d1, d2]
+    len(train_ds), len(val_ds)  # Should be 80% for train and 20% for validation
 
 # %%
 
@@ -311,41 +318,43 @@ def train(
 # %%
 # LOAD existing or train and SAVE new model
 
-if os.path.exists(MODEL_PATH):
-    model = load_model(MODEL_PATH, device=DEV)
-else:
-    print("Training model")
-    model = make_model()
-    train(model, max_steps=50000, early_stop_acc=1.0, checkpoints=USE_CHECKPOINTING)
-    save_model(model, MODEL_PATH)
+if __name__ == "__main__":
+    if os.path.exists(MODEL_PATH):
+        model = load_model(MODEL_PATH, device=DEV)
+    else:
+        print("Training model")
+        model = make_model()
+        train(model, max_steps=50000, early_stop_acc=1.0, checkpoints=USE_CHECKPOINTING)
+        save_model(model, MODEL_PATH)
 
 # %%
 
 # --- Model Parameters Overview ---
 
-print("--- Overview of Model Parameters ---")
-total_params = 0
-trainable_params = 0
+if __name__ == "__main__":
+    print("--- Overview of Model Parameters ---")
+    total_params = 0
+    trainable_params = 0
 
-# Use a formatted string for better alignment
-print(f"{'Parameter Name':<40} | {'Shape':<20} | {'Trainable':<10}")
-print("-" * 80)
+    # Use a formatted string for better alignment
+    print(f"{'Parameter Name':<40} | {'Shape':<20} | {'Trainable':<10}")
+    print("-" * 80)
 
-for name, param in model.named_parameters():
-    shape_str = str(tuple(param.shape))
-    is_trainable = "Yes" if param.requires_grad else "No"
-    total_params += param.numel()
+    for name, param in model.named_parameters():
+        shape_str = str(tuple(param.shape))
+        is_trainable = "Yes" if param.requires_grad else "No"
+        total_params += param.numel()
 
-    if not param.requires_grad:
-        continue
-    # Print only trainable parameters
-    print(f"{name:<40} | {shape_str:<20} | {is_trainable:<10}")
-    trainable_params += param.numel()
+        if not param.requires_grad:
+            continue
+        # Print only trainable parameters
+        print(f"{name:<40} | {shape_str:<20} | {is_trainable:<10}")
+        trainable_params += param.numel()
 
-print("-" * 80)
-print(f"Total parameters: {total_params}")
-print(f"Trainable parameters: {trainable_params}")
-print("-" * 80)
+    print("-" * 80)
+    print(f"Total parameters: {total_params}")
+    print(f"Trainable parameters: {trainable_params}")
+    print("-" * 80)
 
 # %%
 
@@ -368,179 +377,182 @@ def check_attention(m, dataloader, eps=1e-3):
     print("✅ no attention leakage onto x₁/x₂")
 
 
-sample = val_ds[0][0]  # Example input sequence
-print(
-    f"Sample sequence: {sample.cpu().numpy()}"
-)  # Print the sample sequence for reference
-_, cache = model.run_with_cache(sample.unsqueeze(0).to(DEV))
+if __name__ == "__main__":
+    sample = val_ds[0][0]  # Example input sequence
+    print(
+        f"Sample sequence: {sample.cpu().numpy()}"
+    )  # Print the sample sequence for reference
+    _, cache = model.run_with_cache(sample.unsqueeze(0).to(DEV))
 
-# --- Create Plotly visualization ---
-token_labels = (
-    [f"d{i+1}" for i in range(LIST_LEN)]
-    + ["SEP"]
-    + [f"o{i+1}" for i in range(LIST_LEN)]
-)
-subplot_titles = [f"Layer {l} Attention Pattern" for l in range(model.cfg.n_layers)]
+    # --- Create Plotly visualization ---
+    token_labels = (
+        [f"d{i+1}" for i in range(LIST_LEN)]
+        + ["SEP"]
+        + [f"o{i+1}" for i in range(LIST_LEN)]
+    )
+    subplot_titles = [f"Layer {l} Attention Pattern" for l in range(model.cfg.n_layers)]
 
-fig = make_subplots(
-    rows=1,
-    cols=model.cfg.n_layers,
-    subplot_titles=subplot_titles,
-    horizontal_spacing=0.08,  # Add spacing between plots
-)
-
-for l in range(model.cfg.n_layers):
-    pat = cache["pattern", l][0, 0].cpu().numpy()
-
-    fig.add_trace(
-        go.Heatmap(
-            z=pat,
-            x=token_labels,
-            y=token_labels,
-            colorscale="Viridis",
-            zmin=0,
-            zmax=1,
-            showscale=(
-                l == model.cfg.n_layers - 1
-            ),  # Show colorbar only for the last plot
-        ),
-        row=1,
-        col=l + 1,
+    fig = make_subplots(
+        rows=1,
+        cols=model.cfg.n_layers,
+        subplot_titles=subplot_titles,
+        horizontal_spacing=0.08,  # Add spacing between plots
     )
 
-fig.update_layout(
-    title_text="Attention Patterns for a Sample Sequence",
-    width=1200,
-    height=450,
-    template="plotly_white",
-)
+    for l in range(model.cfg.n_layers):
+        pat = cache["pattern", l][0, 0].cpu().numpy()
 
-# Apply settings to all axes
-fig.update_xaxes(title_text="Key Position")
-fig.update_yaxes(title_text="Query Position", autorange="reversed")
+        fig.add_trace(
+            go.Heatmap(
+                z=pat,
+                x=token_labels,
+                y=token_labels,
+                colorscale="Viridis",
+                zmin=0,
+                zmax=1,
+                showscale=(
+                    l == model.cfg.n_layers - 1
+                ),  # Show colorbar only for the last plot
+            ),
+            row=1,
+            col=l + 1,
+        )
 
-fig.show()
+    fig.update_layout(
+        title_text="Attention Patterns for a Sample Sequence",
+        width=1200,
+        height=450,
+        template="plotly_white",
+    )
 
-check_attention(model, val_dl)
+    # Apply settings to all axes
+    fig.update_xaxes(title_text="Key Position")
+    fig.update_yaxes(title_text="Query Position", autorange="reversed")
+
+    fig.show()
+
+    check_attention(model, val_dl)
 
 # %% [markdown]
 # There is variance in the attention pattern in only 2 positions in each layer,
 # with the rest of the attention pattern being fixed
 # %%
 
-all_logits, all_cache = model.run_with_cache(all_inputs.to(DEV), return_type="logits")
+if __name__ == "__main__":
+    all_logits, all_cache = model.run_with_cache(all_inputs.to(DEV), return_type="logits")
 
-l0_var = all_cache["blocks.0.attn.hook_pattern"].squeeze().var(dim=0, correction=0)
-l1_var = all_cache["blocks.1.attn.hook_pattern"].squeeze().var(dim=0, correction=0)
+    l0_var = all_cache["blocks.0.attn.hook_pattern"].squeeze().var(dim=0, correction=0)
+    l1_var = all_cache["blocks.1.attn.hook_pattern"].squeeze().var(dim=0, correction=0)
 
-fig, axes = plt.subplots(1, 2, figsize=(10, 4))
-im0 = axes[0].imshow(l0_var.cpu(), cmap="viridis")
-axes[0].set_title("Layer 0 Attention Pattern Variance")
-axes[0].set_xlabel("Key Position")
-axes[0].set_ylabel("Query Position")
-fig.colorbar(im0, ax=axes[0])
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+    im0 = axes[0].imshow(l0_var.cpu(), cmap="viridis")
+    axes[0].set_title("Layer 0 Attention Pattern Variance")
+    axes[0].set_xlabel("Key Position")
+    axes[0].set_ylabel("Query Position")
+    fig.colorbar(im0, ax=axes[0])
 
-im1 = axes[1].imshow(l1_var.cpu(), cmap="viridis")
-axes[1].set_title("Layer 1 Attention Pattern Variance")
-axes[1].set_xlabel("Key Position")
-axes[1].set_ylabel("Query Position")
-fig.colorbar(im1, ax=axes[1])
+    im1 = axes[1].imshow(l1_var.cpu(), cmap="viridis")
+    axes[1].set_title("Layer 1 Attention Pattern Variance")
+    axes[1].set_xlabel("Key Position")
+    axes[1].set_ylabel("Query Position")
+    fig.colorbar(im1, ax=axes[1])
 
-plt.tight_layout()
-plt.show()
+    plt.tight_layout()
+    plt.show()
 
 # %%
 # --- Mean Attention Patterns ---
 
-all_pats = [[] for _ in range(model.cfg.n_layers)]
-for inputs, _ in val_dl:
-    with torch.no_grad():
-        _, cache = model.run_with_cache(inputs.to(DEV))
-    for l in range(model.cfg.n_layers):
-        pat = cache["pattern", l][:, 0]  # (batch, Q, K)
-        all_pats[l].append(pat)
-all_pats = [torch.cat(pats, dim=0) for pats in all_pats]
-
-for l, pats in enumerate(all_pats):
-    identical = torch.allclose(pats, pats[0].expand_as(pats))
-    print(f"Layer {l}: all attention patterns identical? {'✅' if identical else '❌'}")
-
-with torch.no_grad():
-    avg_pats = [
-        torch.zeros(SEQ_LEN, SEQ_LEN, device=DEV) for _ in range(model.cfg.n_layers)
-    ]
-    n = 0
+if __name__ == "__main__":
+    all_pats = [[] for _ in range(model.cfg.n_layers)]
     for inputs, _ in val_dl:
-        _, cache = model.run_with_cache(inputs.to(DEV))
+        with torch.no_grad():
+            _, cache = model.run_with_cache(inputs.to(DEV))
         for l in range(model.cfg.n_layers):
-            avg_pats[l] += cache["pattern", l][:, 0].sum(0)
-        n += inputs.shape[0]
-    avg_pats = [p / n for p in avg_pats]
+            pat = cache["pattern", l][:, 0]  # (batch, Q, K)
+            all_pats[l].append(pat)
+    all_pats = [torch.cat(pats, dim=0) for pats in all_pats]
 
-# --- Visualize Average Attention Patterns ---
-token_labels = (
-    [f"d{i+1}" for i in range(LIST_LEN)]
-    + ["SEP"]
-    + [f"o{i+1}" for i in range(LIST_LEN)]
-)
-subplot_titles = [f"Layer {l} Average Attention" for l in range(model.cfg.n_layers)]
+    for l, pats in enumerate(all_pats):
+        identical = torch.allclose(pats, pats[0].expand_as(pats))
+        print(f"Layer {l}: all attention patterns identical? {'✅' if identical else '❌'}")
 
-fig = make_subplots(
-    rows=1,
-    cols=model.cfg.n_layers,
-    subplot_titles=subplot_titles,
-    horizontal_spacing=0.08,
-)
+    with torch.no_grad():
+        avg_pats = [
+            torch.zeros(SEQ_LEN, SEQ_LEN, device=DEV) for _ in range(model.cfg.n_layers)
+        ]
+        n = 0
+        for inputs, _ in val_dl:
+            _, cache = model.run_with_cache(inputs.to(DEV))
+            for l in range(model.cfg.n_layers):
+                avg_pats[l] += cache["pattern", l][:, 0].sum(0)
+            n += inputs.shape[0]
+        avg_pats = [p / n for p in avg_pats]
 
-for l in range(model.cfg.n_layers):
-    avg_pat_np = avg_pats[l].cpu().numpy()
+    # --- Visualize Average Attention Patterns ---
+    token_labels = (
+        [f"d{i+1}" for i in range(LIST_LEN)]
+        + ["SEP"]
+        + [f"o{i+1}" for i in range(LIST_LEN)]
+    )
+    subplot_titles = [f"Layer {l} Average Attention" for l in range(model.cfg.n_layers)]
 
-    fig.add_trace(
-        go.Heatmap(
-            z=avg_pat_np,
-            x=token_labels,
-            y=token_labels,
-            colorscale="Viridis",
-            zmin=0,
-            zmax=1,
-            showscale=(
-                l == model.cfg.n_layers - 1
-            ),  # Show colorbar only for the last plot
-        ),
-        row=1,
-        col=l + 1,
+    fig = make_subplots(
+        rows=1,
+        cols=model.cfg.n_layers,
+        subplot_titles=subplot_titles,
+        horizontal_spacing=0.08,
     )
 
-fig.update_layout(
-    title_text="Average Attention Patterns Across Validation Set",
-    width=1200,
-    height=450,
-    template="plotly_white",
-)
-fig.update_xaxes(title_text="Key Position")
-fig.update_yaxes(title_text="Query Position", autorange="reversed")
-fig.show()
+    for l in range(model.cfg.n_layers):
+        avg_pat_np = avg_pats[l].cpu().numpy()
 
+        fig.add_trace(
+            go.Heatmap(
+                z=avg_pat_np,
+                x=token_labels,
+                y=token_labels,
+                colorscale="Viridis",
+                zmin=0,
+                zmax=1,
+                showscale=(
+                    l == model.cfg.n_layers - 1
+                ),  # Show colorbar only for the last plot
+            ),
+            row=1,
+            col=l + 1,
+        )
 
-# Create a deep copy of the model to avoid modifying the original
-model_with_avg_attn = copy.deepcopy(model)
-
-
-def mk_hook(avg):
-    logits = (avg + 1e-12).log()  # log-prob so softmax≈avg, ε avoids -∞
-
-    def f(scores, hook):
-        return logits.unsqueeze(0).unsqueeze(0).expand_as(scores)
-
-    return f
-
-
-for l in range(model_with_avg_attn.cfg.n_layers):
-    model_with_avg_attn.blocks[l].attn.hook_attn_scores.add_hook(
-        mk_hook(avg_pats[l]), dir="fwd"
+    fig.update_layout(
+        title_text="Average Attention Patterns Across Validation Set",
+        width=1200,
+        height=450,
+        template="plotly_white",
     )
+    fig.update_xaxes(title_text="Key Position")
+    fig.update_yaxes(title_text="Query Position", autorange="reversed")
+    fig.show()
 
-print("Accuracy with avg-attn:", accuracy(model_with_avg_attn))
+
+    # Create a deep copy of the model to avoid modifying the original
+    model_with_avg_attn = copy.deepcopy(model)
+
+
+    def mk_hook(avg):
+        logits = (avg + 1e-12).log()  # log-prob so softmax≈avg, ε avoids -∞
+
+        def f(scores, hook):
+            return logits.unsqueeze(0).unsqueeze(0).expand_as(scores)
+
+        return f
+
+
+    for l in range(model_with_avg_attn.cfg.n_layers):
+        model_with_avg_attn.blocks[l].attn.hook_attn_scores.add_hook(
+            mk_hook(avg_pats[l]), dir="fwd"
+        )
+
+    print("Accuracy with avg-attn:", accuracy(model_with_avg_attn))
 
 # %% [markdown]
 # Visualise a PCA of the embedding matrix: basically nothing interesting to see here.
@@ -548,104 +560,107 @@ print("Accuracy with avg-attn:", accuracy(model_with_avg_attn))
 
 # --- PCA on model.W_E embedding matrix ---
 
-# Get the embedding weights (VOCAB, D_MODEL)
-W_E = model.W_E.detach().cpu().numpy()
+if __name__ == "__main__":
+    # Get the embedding weights (VOCAB, D_MODEL)
+    W_E = model.W_E.detach().cpu().numpy()
 
-# Run PCA to reduce to 2D
-pca = PCA(n_components=2)
-W_E_2d = pca.fit_transform(W_E)
+    # Run PCA to reduce to 2D
+    pca = PCA(n_components=2)
+    W_E_2d = pca.fit_transform(W_E)
 
-# Prepare labels: 0..99, INP, SEP
-labels = [str(i) for i in range(N_DIGITS)] + ["INP", "SEP"]
+    # Prepare labels: 0..99, INP, SEP
+    labels = [str(i) for i in range(N_DIGITS)] + ["INP", "SEP"]
 
-# Plot using matplotlib
-plt.figure(figsize=(8, 6))
-plt.scatter(W_E_2d[:N_DIGITS, 0], W_E_2d[:N_DIGITS, 1], c="blue", label="Digits")
-plt.scatter(W_E_2d[N_DIGITS, 0], W_E_2d[N_DIGITS, 1], c="orange", label="INP")
-plt.scatter(W_E_2d[N_DIGITS + 1, 0], W_E_2d[N_DIGITS + 1, 1], c="red", label="SEP")
+    # Plot using matplotlib
+    plt.figure(figsize=(8, 6))
+    plt.scatter(W_E_2d[:N_DIGITS, 0], W_E_2d[:N_DIGITS, 1], c="blue", label="Digits")
+    plt.scatter(W_E_2d[N_DIGITS, 0], W_E_2d[N_DIGITS, 1], c="orange", label="INP")
+    plt.scatter(W_E_2d[N_DIGITS + 1, 0], W_E_2d[N_DIGITS + 1, 1], c="red", label="SEP")
 
-# Annotate points
-for i, label in enumerate(labels):
-    plt.annotate(label, (W_E_2d[i, 0], W_E_2d[i, 1]), fontsize=8, alpha=0.7)
+    # Annotate points
+    for i, label in enumerate(labels):
+        plt.annotate(label, (W_E_2d[i, 0], W_E_2d[i, 1]), fontsize=8, alpha=0.7)
 
-plt.title("PCA of Embedding Matrix $W_E$")
-plt.xlabel("PC1")
-plt.ylabel("PC2")
-plt.legend()
-plt.tight_layout()
-plt.show()
+    plt.title("PCA of Embedding Matrix $W_E$")
+    plt.xlabel("PC1")
+    plt.ylabel("PC2")
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
 
 # %%
 
 # --- PCA on model.W_pos positional embedding matrix ---
 
-# Get the positional embedding weights (SEQ_LEN, D_MODEL)
-W_pos = model.W_pos.detach().cpu().numpy()
+if __name__ == "__main__":
+    # Get the positional embedding weights (SEQ_LEN, D_MODEL)
+    W_pos = model.W_pos.detach().cpu().numpy()
 
-# Run PCA to reduce to 2D
-pca_pos = PCA(n_components=2)
-W_pos_2d = pca_pos.fit_transform(W_pos)
+    # Run PCA to reduce to 2D
+    pca_pos = PCA(n_components=2)
+    W_pos_2d = pca_pos.fit_transform(W_pos)
 
-# Prepare labels for each position: [d1, d2, SEP, o1, o2]
-pos_labels = (
-    [f"d{i+1}" for i in range(LIST_LEN)]
-    + ["SEP"]
-    + [f"o{i+1}" for i in range(LIST_LEN)]
-)
+    # Prepare labels for each position: [d1, d2, SEP, o1, o2]
+    pos_labels = (
+        [f"d{i+1}" for i in range(LIST_LEN)]
+        + ["SEP"]
+        + [f"o{i+1}" for i in range(LIST_LEN)]
+    )
 
-# Plot using matplotlib
-plt.figure(figsize=(8, 6))
-plt.scatter(W_pos_2d[:, 0], W_pos_2d[:, 1], c="green")
+    # Plot using matplotlib
+    plt.figure(figsize=(8, 6))
+    plt.scatter(W_pos_2d[:, 0], W_pos_2d[:, 1], c="green")
 
-# Annotate points
-for i, label in enumerate(pos_labels):
-    plt.annotate(label, (W_pos_2d[i, 0], W_pos_2d[i, 1]), fontsize=10, alpha=0.8)
+    # Annotate points
+    for i, label in enumerate(pos_labels):
+        plt.annotate(label, (W_pos_2d[i, 0], W_pos_2d[i, 1]), fontsize=10, alpha=0.8)
 
-plt.title("PCA of Positional Embedding Matrix $W_{pos}$")
-plt.xlabel("PC1")
-plt.ylabel("PC2")
-plt.tight_layout()
-plt.show()
+    plt.title("PCA of Positional Embedding Matrix $W_{pos}$")
+    plt.xlabel("PC1")
+    plt.ylabel("PC2")
+    plt.tight_layout()
+    plt.show()
 
 # %%
 
-all_predictions = all_logits.argmax(dim=-1)[:, -2:]
-all_correct = (all_predictions.cpu() == all_targets[:, -2:].cpu()).all(dim=-1)
+if __name__ == "__main__":
+    all_predictions = all_logits.argmax(dim=-1)[:, -2:]
+    all_correct = (all_predictions.cpu() == all_targets[:, -2:].cpu()).all(dim=-1)
 
-# The first attention pattern works strictly on positional embeddings not on
-# token embeddings.
-with torch.no_grad():
-    embeds = (
-        (all_cache["blocks.0.hook_resid_pre"] @ model.W_K[0].squeeze())
-        # (all_cache["blocks.0.hook_resid_pre"] @ model.W_K[0].squeeze())
-        .cpu()
-        .numpy()[:, :2]
-    )
-flat_embeds = embeds.reshape(-1, embeds.shape[-1])  
+    # The first attention pattern works strictly on positional embeddings not on
+    # token embeddings.
+    with torch.no_grad():
+        embeds = (
+            (all_cache["blocks.0.hook_resid_pre"] @ model.W_K[0].squeeze())
+            # (all_cache["blocks.0.hook_resid_pre"] @ model.W_K[0].squeeze())
+            .cpu()
+            .numpy()[:, :2]
+        )
+    flat_embeds = embeds.reshape(-1, embeds.shape[-1])  
 
-pca = PCA(n_components=2)
-embeds_2d = pca.fit_transform(flat_embeds)  
-embeds_2d = embeds_2d.reshape(embeds.shape[0], embeds.shape[1], 2)  
+    pca = PCA(n_components=2)
+    embeds_2d = pca.fit_transform(flat_embeds)  
+    embeds_2d = embeds_2d.reshape(embeds.shape[0], embeds.shape[1], 2)  
 
-colors = ["blue", "orange", "green", "red", "purple"]
-labels = [f"pos {i}" for i in range(embeds.shape[1])]
+    colors = ["blue", "orange", "green", "red", "purple"]
+    labels = [f"pos {i}" for i in range(embeds.shape[1])]
 
-plt.figure(figsize=(8, 6))
-for pos in range(embeds.shape[1]):
-    plt.scatter(
-        embeds_2d[:, pos, 0],
-        embeds_2d[:, pos, 1],
-        s=5,
-        color=colors[pos],
-        label=labels[pos],
-        alpha=0.5,
-    )
-plt.xlabel("PC1")
-plt.ylabel("PC2")
-plt.title("PCA of hook_embed (colored by position index)")
-plt.legend()
-plt.tight_layout()
-plt.show()
+    plt.figure(figsize=(8, 6))
+    for pos in range(embeds.shape[1]):
+        plt.scatter(
+            embeds_2d[:, pos, 0],
+            embeds_2d[:, pos, 1],
+            s=5,
+            color=colors[pos],
+            label=labels[pos],
+            alpha=0.5,
+        )
+    plt.xlabel("PC1")
+    plt.ylabel("PC2")
+    plt.title("PCA of hook_embed (colored by position index)")
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
 
 
 # %% [markdown]
@@ -655,164 +670,167 @@ plt.show()
 
 # %%
 
-# Extract the relevant attention values
-attn_vals = all_cache["attn_scores", 0].squeeze()[:, 2, [0, 1]].cpu().numpy()
+if __name__ == "__main__":
+    # Extract the relevant attention values
+    attn_vals = all_cache["attn_scores", 0].squeeze()[:, 2, [0, 1]].cpu().numpy()
 
-# Scatter plot: x = attention to d1 (pos 0), y = attention to d2 (pos 1), color by correctness
-plt.figure(figsize=(6, 6))
-plt.scatter(attn_vals[:, 0], attn_vals[:, 1], c=all_correct, cmap="coolwarm", alpha=0.5)
-plt.xlabel("Attention to d1 (pos 0)")
-plt.ylabel("Attention to d2 (pos 1)")
-plt.title("Scatter plot of Layer 0, Query=SEP, Attention to d1 vs d2")
-plt.grid(True)
-plt.tight_layout()
-plt.colorbar(label="Correct (1=True, 0=False)")
-plt.show()
+    # Scatter plot: x = attention to d1 (pos 0), y = attention to d2 (pos 1), color by correctness
+    plt.figure(figsize=(6, 6))
+    plt.scatter(attn_vals[:, 0], attn_vals[:, 1], c=all_correct, cmap="coolwarm", alpha=0.5)
+    plt.xlabel("Attention to d1 (pos 0)")
+    plt.ylabel("Attention to d2 (pos 1)")
+    plt.title("Scatter plot of Layer 0, Query=SEP, Attention to d1 vs d2")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.colorbar(label="Correct (1=True, 0=False)")
+    plt.show()
 
 # %% [markdown]
 # SEP, d2, and o2 positional embeddings decode to similar logit distributions,
 # that are far from o1 and d1 (which are also very far from one another)
 
 # Compute pos_U
-pos_U = model.W_pos @ model.W_U
+if __name__ == "__main__":
+    pos_U = model.W_pos @ model.W_U
 
-# Run PCA to reduce to 2D
-pca_pos_U = PCA(n_components=2)
-pos_U_2d = pca_pos_U.fit_transform(pos_U.detach().cpu().numpy())
+    # Run PCA to reduce to 2D
+    pca_pos_U = PCA(n_components=2)
+    pos_U_2d = pca_pos_U.fit_transform(pos_U.detach().cpu().numpy())
 
-# Plot using matplotlib
-plt.figure(figsize=(8, 6))
-plt.scatter(pos_U_2d[:, 0], pos_U_2d[:, 1], c="purple")
+    # Plot using matplotlib
+    plt.figure(figsize=(8, 6))
+    plt.scatter(pos_U_2d[:, 0], pos_U_2d[:, 1], c="purple")
 
-# Annotate points with their position labels
-for i, label in enumerate(pos_labels):
-    plt.annotate(label, (pos_U_2d[i, 0], pos_U_2d[i, 1]), fontsize=10, alpha=0.8)
+    # Annotate points with their position labels
+    for i, label in enumerate(pos_labels):
+        plt.annotate(label, (pos_U_2d[i, 0], pos_U_2d[i, 1]), fontsize=10, alpha=0.8)
 
-plt.title("PCA of $W_{pos} W_U$")
-plt.xlabel("PC1")
-plt.ylabel("PC2")
-plt.tight_layout()
-plt.show()
+    plt.title("PCA of $W_{pos} W_U$")
+    plt.xlabel("PC1")
+    plt.ylabel("PC2")
+    plt.tight_layout()
+    plt.show()
 
 # %%
 
 # %% Demonstrate the two-slot algorithm on the validation set
-import torch
-import torch.nn.functional as F
+if __name__ == "__main__":
+    import torch
+    import torch.nn.functional as F
 
-model.eval()
+    model.eval()
 
-def cos_batch(a, b):  # (B,d)
-    return F.cosine_similarity(a, b, dim=-1)
+    def cos_batch(a, b):  # (B,d)
+        return F.cosine_similarity(a, b, dim=-1)
 
-wU = model.W_U  # (d_model, vocab)
+    wU = model.W_U  # (d_model, vocab)
 
-write_cos, read_o1_cos, read_o2_cos = [], [], []
-sep_pos, d1_pos, d2_pos, o1_pos, o2_pos = 2, 0, 1, 3, 4
+    write_cos, read_o1_cos, read_o2_cos = [], [], []
+    sep_pos, d1_pos, d2_pos, o1_pos, o2_pos = 2, 0, 1, 3, 4
 
-contrib = {
-    "o1_sep_to_d1": [],
-    "o1_sep_to_d2": [],
-    "o2_sep_to_d1": [],
-    "o2_sep_to_d2": [],
-    "o2_o1_to_d1": [],
-    "o2_o1_to_d2": [],
-}
-acc_o2_orig, acc_o2_no_o1edge = 0, 0
-tots = 0
+    contrib = {
+        "o1_sep_to_d1": [],
+        "o1_sep_to_d2": [],
+        "o2_sep_to_d1": [],
+        "o2_sep_to_d2": [],
+        "o2_o1_to_d1": [],
+        "o2_o1_to_d2": [],
+    }
+    acc_o2_orig, acc_o2_no_o1edge = 0, 0
+    tots = 0
 
-with torch.no_grad():
-    for inputs, targets in val_dl:
-        inputs = inputs.to(DEV)
+    with torch.no_grad():
+        for inputs, targets in val_dl:
+            inputs = inputs.to(DEV)
 
-        logits, cache = model.run_with_cache(inputs, return_type="logits")
+            logits, cache = model.run_with_cache(inputs, return_type="logits")
 
-        # Residuals
-        r0 = cache["hook_embed"] + cache["hook_pos_embed"]                 # (B,T,d)
-        rL0 = cache["blocks.0.hook_resid_post"]                            # (B,T,d)
-        rL1 = cache["blocks.1.hook_resid_post"]                            # (B,T,d)
+            # Residuals
+            r0 = cache["hook_embed"] + cache["hook_pos_embed"]                 # (B,T,d)
+            rL0 = cache["blocks.0.hook_resid_post"]                            # (B,T,d)
+            rL1 = cache["blocks.1.hook_resid_post"]                            # (B,T,d)
 
-        # Attention patterns
-        pat0 = cache["blocks.0.attn.hook_pattern"][:, 0]                   # (B,Q,K)
-        pat1 = cache["blocks.1.attn.hook_pattern"][:, 0]                   # (B,Q,K)
+            # Attention patterns
+            pat0 = cache["blocks.0.attn.hook_pattern"][:, 0]                   # (B,Q,K)
+            pat1 = cache["blocks.1.attn.hook_pattern"][:, 0]                   # (B,Q,K)
 
-        # --- Layer 0: write both digits into SEP
-        a1 = pat0[:, sep_pos, d1_pos].unsqueeze(-1)                        # (B,1)
-        a2 = pat0[:, sep_pos, d2_pos].unsqueeze(-1)                        # (B,1)
+            # --- Layer 0: write both digits into SEP
+            a1 = pat0[:, sep_pos, d1_pos].unsqueeze(-1)                        # (B,1)
+            a2 = pat0[:, sep_pos, d2_pos].unsqueeze(-1)                        # (B,1)
 
-        r_sep_pre  = r0[:, sep_pos, :]
-        r_d1_pre   = r0[:, d1_pos, :]
-        r_d2_pre   = r0[:, d2_pos, :]
-        M_true     = rL0[:, sep_pos, :]                                    # r_SEP^(1)
-        M_pred     = r_sep_pre + a1*r_d1_pre + a2*r_d2_pre                 # predicted by copy rule
+            r_sep_pre  = r0[:, sep_pos, :]
+            r_d1_pre   = r0[:, d1_pos, :]
+            r_d2_pre   = r0[:, d2_pos, :]
+            M_true     = rL0[:, sep_pos, :]                                    # r_SEP^(1)
+            M_pred     = r_sep_pre + a1*r_d1_pre + a2*r_d2_pre                 # predicted by copy rule
 
-        write_cos.append(cos_batch(M_true, M_pred).cpu())
+            write_cos.append(cos_batch(M_true, M_pred).cpu())
 
-        # --- Layer 1: read M into o1 and o2
-        b1  = pat1[:, o1_pos, sep_pos].unsqueeze(-1)                       # o1<-SEP
-        c1  = pat1[:, o2_pos, sep_pos].unsqueeze(-1)                       # o2<-SEP
-        d1w = pat1[:, o2_pos, o1_pos].unsqueeze(-1)                        # o2<-o1
+            # --- Layer 1: read M into o1 and o2
+            b1  = pat1[:, o1_pos, sep_pos].unsqueeze(-1)                       # o1<-SEP
+            c1  = pat1[:, o2_pos, sep_pos].unsqueeze(-1)                       # o2<-SEP
+            d1w = pat1[:, o2_pos, o1_pos].unsqueeze(-1)                        # o2<-o1
 
-        r_o1_pre  = rL0[:, o1_pos, :]
-        r_o2_pre  = rL0[:, o2_pos, :]
-        r_o1_post = rL1[:, o1_pos, :]
-        r_o2_post = rL1[:, o2_pos, :]
+            r_o1_pre  = rL0[:, o1_pos, :]
+            r_o2_pre  = rL0[:, o2_pos, :]
+            r_o1_post = rL1[:, o1_pos, :]
+            r_o2_post = rL1[:, o2_pos, :]
 
-        r_o1_pred = r_o1_pre + b1*M_true
-        r_o2_pred = r_o2_pre + c1*M_true + d1w*r_o1_pre
+            r_o1_pred = r_o1_pre + b1*M_true
+            r_o2_pred = r_o2_pre + c1*M_true + d1w*r_o1_pre
 
-        read_o1_cos.append(cos_batch(r_o1_post, r_o1_pred).cpu())
-        read_o2_cos.append(cos_batch(r_o2_post, r_o2_pred).cpu())
+            read_o1_cos.append(cos_batch(r_o1_post, r_o1_pred).cpu())
+            read_o2_cos.append(cos_batch(r_o2_post, r_o2_pred).cpu())
 
-        # --- Direct logit attribution (per-source contributions)
-        d1_tok = inputs[:, d1_pos]                                         # (B,)
-        d2_tok = inputs[:, d2_pos]
+            # --- Direct logit attribution (per-source contributions)
+            d1_tok = inputs[:, d1_pos]                                         # (B,)
+            d2_tok = inputs[:, d2_pos]
 
-        w_d1 = wU[:, d1_tok].T                                             # (B,d)
-        w_d2 = wU[:, d2_tok].T
+            w_d1 = wU[:, d1_tok].T                                             # (B,d)
+            w_d2 = wU[:, d2_tok].T
 
-        def dot(v, w):  # (B,d)·(B,d)->(B,)
-            return (v * w).sum(dim=-1)
+            def dot(v, w):  # (B,d)·(B,d)->(B,)
+                return (v * w).sum(dim=-1)
 
-        # o1 logits
-        contrib["o1_sep_to_d1"].append(dot(b1*M_true, w_d1).cpu())
-        contrib["o1_sep_to_d2"].append(dot(b1*M_true, w_d2).cpu())
+            # o1 logits
+            contrib["o1_sep_to_d1"].append(dot(b1*M_true, w_d1).cpu())
+            contrib["o1_sep_to_d2"].append(dot(b1*M_true, w_d2).cpu())
 
-        # o2 logits
-        contrib["o2_sep_to_d1"].append(dot(c1*M_true,    w_d1).cpu())
-        contrib["o2_sep_to_d2"].append(dot(c1*M_true,    w_d2).cpu())
-        contrib["o2_o1_to_d1"].append(dot(d1w*r_o1_pre,  w_d1).cpu())
-        contrib["o2_o1_to_d2"].append(dot(d1w*r_o1_pre,  w_d2).cpu())
+            # o2 logits
+            contrib["o2_sep_to_d1"].append(dot(c1*M_true,    w_d1).cpu())
+            contrib["o2_sep_to_d2"].append(dot(c1*M_true,    w_d2).cpu())
+            contrib["o2_o1_to_d1"].append(dot(d1w*r_o1_pre,  w_d1).cpu())
+            contrib["o2_o1_to_d2"].append(dot(d1w*r_o1_pre,  w_d2).cpu())
 
-        # --- Counterfactual: remove the o2<-o1 edge
-        r_o2_no_o1 = r_o2_post - d1w*r_o1_pre
-        logits_o2_cf = r_o2_no_o1 @ wU
-        pred_o2_cf = logits_o2_cf.argmax(dim=-1)
+            # --- Counterfactual: remove the o2<-o1 edge
+            r_o2_no_o1 = r_o2_post - d1w*r_o1_pre
+            logits_o2_cf = r_o2_no_o1 @ wU
+            pred_o2_cf = logits_o2_cf.argmax(dim=-1)
 
-        pred_o2 = logits[:, o2_pos, :].argmax(dim=-1)
-        acc_o2_orig     += (pred_o2    == d2_tok).sum().item()
-        acc_o2_no_o1edge += (pred_o2_cf == d2_tok).sum().item()
-        tots += inputs.size(0)
+            pred_o2 = logits[:, o2_pos, :].argmax(dim=-1)
+            acc_o2_orig     += (pred_o2    == d2_tok).sum().item()
+            acc_o2_no_o1edge += (pred_o2_cf == d2_tok).sum().item()
+            tots += inputs.size(0)
 
-# --- Summary
-write_cos = torch.cat(write_cos)
-read_o1_cos = torch.cat(read_o1_cos)
-read_o2_cos = torch.cat(read_o2_cos)
+    # --- Summary
+    write_cos = torch.cat(write_cos)
+    read_o1_cos = torch.cat(read_o1_cos)
+    read_o2_cos = torch.cat(read_o2_cos)
 
-print(f"L0 write recon cos  : mean {write_cos.mean():.4f}  median {write_cos.median():.4f}")
-print(f"L1 read o1 recon cos: mean {read_o1_cos.mean():.4f}  median {read_o1_cos.median():.4f}")
-print(f"L1 read o2 recon cos: mean {read_o2_cos.mean():.4f}  median {read_o2_cos.median():.4f}")
+    print(f"L0 write recon cos  : mean {write_cos.mean():.4f}  median {write_cos.median():.4f}")
+    print(f"L1 read o1 recon cos: mean {read_o1_cos.mean():.4f}  median {read_o1_cos.median():.4f}")
+    print(f"L1 read o2 recon cos: mean {read_o2_cos.mean():.4f}  median {read_o2_cos.median():.4f}")
 
-for k in contrib:
-    contrib[k] = torch.cat(contrib[k])
-print("\nDirect logit contributions (means):")
-print(f"  o1: SEP→d1 {contrib['o1_sep_to_d1'].mean():.4f}, SEP→d2 {contrib['o1_sep_to_d2'].mean():.4f}")
-print(f"  o2: SEP→d2 {contrib['o2_sep_to_d2'].mean():.4f}, SEP→d1 {contrib['o2_sep_to_d1'].mean():.4f}")
-print(f"  o2: o1 →d1 {contrib['o2_o1_to_d1'].mean():.4f}  (expect <0),  o1→d2 {contrib['o2_o1_to_d2'].mean():.4f}")
+    for k in contrib:
+        contrib[k] = torch.cat(contrib[k])
+    print("\nDirect logit contributions (means):")
+    print(f"  o1: SEP→d1 {contrib['o1_sep_to_d1'].mean():.4f}, SEP→d2 {contrib['o1_sep_to_d2'].mean():.4f}")
+    print(f"  o2: SEP→d2 {contrib['o2_sep_to_d2'].mean():.4f}, SEP→d1 {contrib['o2_sep_to_d1'].mean():.4f}")
+    print(f"  o2: o1 →d1 {contrib['o2_o1_to_d1'].mean():.4f}  (expect <0),  o1→d2 {contrib['o2_o1_to_d2'].mean():.4f}")
 
-frac_neg = (contrib["o2_o1_to_d1"] < 0).float().mean().item()
-print(f"\nFrac(o2: o1→d1 contribution < 0): {frac_neg:.3f}")
+    frac_neg = (contrib["o2_o1_to_d1"] < 0).float().mean().item()
+    print(f"\nFrac(o2: o1→d1 contribution < 0): {frac_neg:.3f}")
 
-print(f"\nSecond-digit accuracy:")
-print(f"  original : {acc_o2_orig/tots:.4f}")
-print(f"  no o2←o1 : {acc_o2_no_o1edge/tots:.4f}  (counterfactual by removing that path)")
+    print(f"\nSecond-digit accuracy:")
+    print(f"  original : {acc_o2_orig/tots:.4f}")
+    print(f"  no o2←o1 : {acc_o2_no_o1edge/tots:.4f}  (counterfactual by removing that path)")
