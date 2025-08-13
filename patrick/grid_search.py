@@ -277,13 +277,13 @@ def train_and_return_model(
     pbar = tqdm(total=train_steps, desc="train", leave=False, ncols=120)
     for step in range(1, train_steps + 1):
         xb, yb = make_batch(batch_size, cfg.N_DIGITS, cfg.LIST_LEN, device, g)
-        logits = model(xb)[:, cfg.LIST_LEN + 1 :]
+        logits = model(xb)[:, cfg.LIST_LEN + 1:]
         gold = yb[:, cfg.LIST_LEN + 1 :]
 
         loss = ce(logits.reshape(-1, logits.size(-1)), gold.reshape(-1))
         loss.backward()
         opt.step()
-        opt.zero_grad(set_to_none=True)
+        opt.zero_grad()
 
         if step % eval_every == 0 or step == train_steps:
             last_eval = eval_accuracy(model, val_inputs, val_targets, cfg.LIST_LEN)

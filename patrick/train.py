@@ -96,8 +96,7 @@ def train_with_config(
     eval_every: int = 2_500,
     early_stop_acc: float = 0.999,
     val_size: int = 8_192,
-    lr: float = 1e-3,
-    grad_clip: float = 1.0,
+    lr: float = 1e-4,
 ) -> Tuple[nn.Module, Dict]:
     """Train one model for a given cfg and return (model, metrics)."""
     model, metrics = train_and_return_model(
@@ -110,7 +109,6 @@ def train_with_config(
         val_size=val_size,
         base_seed=base_seed,
         lr=lr,
-        grad_clip=grad_clip,
     )
     return model, metrics
 
@@ -121,7 +119,7 @@ def train_with_config(
 
 if __name__ == "__main__":
     device = pick_device("auto")
-    set_global_seed(2)
+    set_global_seed(0)
     os.makedirs("./models", exist_ok=True)
 
     common = dict(
@@ -133,13 +131,13 @@ if __name__ == "__main__":
         USE_BIAS=False,
         FREEZE_WV=True,
         FREEZE_WO=True,
-        WEIGHT_DECAY=0.,
+        WEIGHT_DECAY=0.01,
         run_idx=0,
     )
 
     for n_layers in [2, 3]:
         cfg = Config(N_LAYERS=n_layers, **common)
-        model, metrics = train_with_config(cfg, device)
+        model, metrics = train_with_config(cfg, device, batch_size=128, train_steps=100_000, lr=1e-4)
         path = os.path.join("models", f"{_config_stem(cfg)}.pt")
         save_model(path, model, cfg, metrics)
         print(f"Saved: {path} | val_acc={metrics['val_acc']:.4f} | steps={metrics['steps_trained']}")

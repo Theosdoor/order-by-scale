@@ -42,7 +42,7 @@ def val(pred, target):
     return (pred[:, -LIST_LEN:] == target[:, -LIST_LEN:]).float().mean().item()
 
 
-MODEL_PATH = "models/copytask_L2_ND100_DM128_H1_NL2_LN0_B0_FWV1_FWO1_WD0p0_RUN0.pt"
+MODEL_PATH = "models/copytask_L2_ND100_DM128_H1_NL2_LN0_B0_FWV1_FWO1_WD0p01_RUN0.pt"
 
 if __name__ == "__main__":
     model, _, _ = load_model(MODEL_PATH)
