@@ -353,7 +353,7 @@ def train_one(
 
 def build_grid() -> List[Config]:
     LIST_LEN = list(range(2, 6))
-    N_DIGITS = [10, 100, 1000]
+    N_DIGITS = [100]
     D_MODEL = [8, 32, 128, 256]
     N_HEAD = [1, 2, 4]
     N_LAYERS = list(range(2, 7))
