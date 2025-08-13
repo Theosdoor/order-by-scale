@@ -2,6 +2,7 @@
 - Attention flow plots for the original attention pattern and the ablated one
   the 2L model.
 """
+
 # %%
 import itertools
 import numpy as np
@@ -13,7 +14,9 @@ from functools import partial
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 
-from nb_2025_08_12 import load_model, MODEL_PATH, get_data, LIST_LEN
+from nb_2025_08_12 import MODEL_PATH, get_data, LIST_LEN
+from train import load_model
+from grid_search import make_validation_set
 
 # Configure plotly to use static rendering if widgets fail
 import plotly.io as pio
@@ -39,14 +42,16 @@ def val(pred, target):
     return (pred[:, -LIST_LEN:] == target[:, -LIST_LEN:]).float().mean().item()
 
 
-if os.path.exists(MODEL_PATH):
-    model = load_model(MODEL_PATH, device=DEV)
-    data, inputs = get_data()
+MODEL_PATH = "models/copytask_L2_ND100_DM128_H1_NL2_LN0_B0_FWV1_FWO1_WD0p0_RUN0.pt"
+
+if __name__ == "__main__":
+    model, _, _ = load_model(MODEL_PATH)
+    inputs, data = make_validation_set(8192, 100, 2, device, 0)
     logits, cache = model.run_with_cache(inputs, return_type="logits")
 
     assert val(data, data) == 1.0
     assert val(inputs, data) == 0.0
-    original_performance = val(logits.argmax(-1).cpu(), data)
+    original_performance = val(logits.argmax(-1), data)
     print(f"Original performance: {original_performance}")
 
 # %%
@@ -216,7 +221,7 @@ if __name__ == "__main__":
                 (f"blocks.{l}.attn.hook_pattern", partial(ablate_qk_hook, q=q, k=k)),
             ],
         )
-        pttn_ablate_perf = val(pttn_ablate_logits.argmax(-1).cpu(), data)
+        pttn_ablate_perf = val(pttn_ablate_logits.argmax(-1), data)
         if abs(pttn_ablate_perf - original_performance) < 1e-4:
             ablated[l, q, k] = True
 
@@ -229,7 +234,7 @@ if __name__ == "__main__":
             ),
         ],
     )
-    perf_hit = original_performance - val(ablate_pttn_logits.argmax(-1).cpu(), data)
+    perf_hit = original_performance - val(ablate_pttn_logits.argmax(-1), data)
     print(f"Ablated performance hit: {perf_hit:.2g}")
 
     # Permanently add the hook

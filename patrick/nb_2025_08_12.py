@@ -275,7 +275,7 @@ def accuracy(m):
         for inputs, targets in val_dl:
             logits = m(inputs.to(DEV))[:, LIST_LEN + 1 :]  # (batch, 2, vocab)
             preds = logits.argmax(-1)
-            hits += (preds == targets[:, LIST_LEN + 1 :].to(DEV)).sum().item()
+            hits += (preds == targets.to(DEV)).sum().item()
             tots += preds.numel()
     return hits / tots
 
@@ -295,7 +295,7 @@ def train(
         inputs, targets = next(dl)
         # get logits/loss for output tokens only
         logits = m(inputs.to(DEV))[:, LIST_LEN + 1 :].reshape(-1, VOCAB)
-        loss = ce(logits, targets[:, LIST_LEN + 1 :].reshape(-1).to(DEV))
+        loss = ce(logits, targets.reshape(-1).to(DEV))
         loss.backward()
         opt.step()
         opt.zero_grad()
