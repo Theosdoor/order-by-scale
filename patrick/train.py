@@ -137,7 +137,7 @@ if __name__ == "__main__":
 
     for n_layers in [2, 3]:
         cfg = Config(N_LAYERS=n_layers, **common)
-        model, metrics = train_with_config(cfg, device, batch_size=128, train_steps=100_000, lr=1e-4)
+        model, metrics = train_with_config(cfg, device, batch_size=128, train_steps=100_000)
         path = os.path.join("models", f"{_config_stem(cfg)}.pt")
         save_model(path, model, cfg, metrics)
         print(f"Saved: {path} | val_acc={metrics['val_acc']:.4f} | steps={metrics['steps_trained']}")
