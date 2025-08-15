@@ -11,11 +11,14 @@ import random
 from dataclasses import dataclass, asdict
 from itertools import product
 from typing import Dict, List, Tuple
+from pathlib import Path
 
 import numpy as np
 import torch
 import torch.nn as nn
 from tqdm.auto import tqdm
+
+import fcntl  # POSIX file locking
 
 from transformer_lens import HookedTransformer, HookedTransformerConfig, utils
 
@@ -138,21 +141,13 @@ def attach_custom_mask(model, seq_len, list_len):
     mask_bias = torch.triu(
         torch.ones(seq_len, seq_len) * float("-inf")
     )  # upper triangular bias mask (lead_diag & above = -inf, rest = 0)
-    mask_bias[0, 0] = (
-        0.0  # don't want a full row of -inf! otherwise we get nan erros & training breaks
-    )
-    mask_bias[list_len + 1 :, :list_len] = float(
-        "-inf"
-    )  # stop output tokens from attending to input tokens
-    mask_bias = mask_bias.unsqueeze(0).unsqueeze(
-        0
-    )  # (1,1,T,T) broadcastable across batch and heads
+    mask_bias[0, 0] = 0.0
+    mask_bias[list_len + 1 :, :list_len] = float("-inf")
+    mask_bias = mask_bias.unsqueeze(0).unsqueeze(0)  # (1,1,T,T)
 
     def _mask(scores, hook=None):
-        # scores: (batch, heads, Q, K)
         return scores + mask_bias.to(scores.device)
 
-    # register the same mask hook on every layer
     for block in model.blocks:
         block.attn.hook_attn_scores.add_perma_hook(_mask, dir="fwd")
 
@@ -164,7 +159,6 @@ def strip_bias(m):
             torch.nn.init.zeros_(mod.bias)
             print(mod)
 
-    # remove biases from attention layers
     attn_biases = ["b_Q", "b_K", "b_V", "b_O"]
     for block in m.blocks:
         for b in attn_biases:
@@ -173,7 +167,6 @@ def strip_bias(m):
                 mod.requires_grad_(False)
                 torch.nn.init.zeros_(mod)
 
-    # remove unembed bias
     if hasattr(m, "unembed") and m.b_U is not None:
         m.unembed.b_U.requires_grad_(False)
         torch.nn.init.zeros_(m.unembed.b_U)
@@ -181,13 +174,8 @@ def strip_bias(m):
 
 def set_WV_identity_and_freeze(model):
     with torch.no_grad():
-        # Create a stack of identity-like matrices for W_V
-        # Each matrix is of shape (d_model, d_head)
-        # We take the first d_head columns of the d_model x d_model identity matrix
         identity_slice = torch.eye(model.cfg.d_model, model.cfg.d_head)
-        # Repeat for each head
         W_V_identity = identity_slice.unsqueeze(0).repeat(model.cfg.n_heads, 1, 1)
-
         for block in model.blocks:
             block.attn.W_V.copy_(W_V_identity)
             block.attn.W_V.requires_grad = False
@@ -195,20 +183,14 @@ def set_WV_identity_and_freeze(model):
 
 def set_WO_identity_and_freeze(model):
     with torch.no_grad():
-        # Create a stack of identity-like matrices for W_O
-        # Each matrix is of shape (d_head, d_model)
-        # We take the first d_head rows of the d_model x d_model identity matrix
         identity_slice = torch.eye(model.cfg.d_head, model.cfg.d_model)
-        # Repeat for each head
         W_O_identity = identity_slice.unsqueeze(0).repeat(model.cfg.n_heads, 1, 1)
-
         for block in model.blocks:
             block.attn.W_O.copy_(W_O_identity)
             block.attn.W_O.requires_grad = False
 
 
 def build_model_from_config(cfg: Config, device: torch.device) -> HookedTransformer:
-    """Construct a model from cfg and apply freezes/bias handling; return on device."""
     assert cfg.D_MODEL % cfg.N_HEAD == 0, "d_model must be divisible by n_heads"
     vocab = cfg.N_DIGITS + 2
     seq_len = 2 * cfg.LIST_LEN + 1
@@ -247,8 +229,6 @@ def train_and_return_model(
     base_seed: int,
     lr: float,
 ) -> Tuple[HookedTransformer, Dict]:
-    """Train a single config, returning both model and metrics."""
-    # Deterministic per-config seed
     seed_material = (str(asdict(cfg)) + str(base_seed)).encode("utf-8")
     seed = int.from_bytes(hashlib.sha256(seed_material).digest()[:4], "big")
     set_global_seed(seed + cfg.run_idx)
@@ -277,7 +257,7 @@ def train_and_return_model(
     pbar = tqdm(total=train_steps, desc="train", leave=False, ncols=120)
     for step in range(1, train_steps + 1):
         xb, yb = make_batch(batch_size, cfg.N_DIGITS, cfg.LIST_LEN, device, g)
-        logits = model(xb)[:, cfg.LIST_LEN + 1:]
+        logits = model(xb)[:, cfg.LIST_LEN + 1 :]
         gold = yb[:, cfg.LIST_LEN + 1 :]
 
         loss = ce(logits.reshape(-1, logits.size(-1)), gold.reshape(-1))
@@ -287,7 +267,6 @@ def train_and_return_model(
 
         if step % eval_every == 0 or step == train_steps:
             last_eval = eval_accuracy(model, val_inputs, val_targets, cfg.LIST_LEN)
-            # Compute train accuracy on current batch
             with torch.no_grad():
                 preds = logits.argmax(dim=-1)
                 train_acc = (preds == gold).float().mean().item()
@@ -331,7 +310,6 @@ def train_one(
     base_seed: int,
     lr: float,
 ) -> Dict:
-    """Backwards-compatible wrapper that returns only metrics."""
     _model, metrics = train_and_return_model(
         cfg=cfg,
         device=device,
@@ -399,6 +377,66 @@ def build_grid() -> List[Config]:
 
 
 # -----------------------------
+# Sharding helpers
+# -----------------------------
+
+
+def detect_shard_from_env() -> Tuple[int, int]:
+    """Infer (shard_index, shard_count) from SLURM variables if present."""
+    env = os.environ
+    sid = env.get("SLURM_ARRAY_TASK_ID")
+    if sid is None:
+        return 0, 1
+    # Prefer explicit count if available
+    scount = env.get("SLURM_ARRAY_TASK_COUNT")
+    if scount is not None:
+        return int(sid), int(scount)
+    # Fall back to min/max/step
+    smin = env.get("SLURM_ARRAY_TASK_MIN")
+    smax = env.get("SLURM_ARRAY_TASK_MAX")
+    sstep = env.get("SLURM_ARRAY_TASK_STEP", "1")
+    if smin is not None and smax is not None:
+        amin = int(smin)
+        amax = int(smax)
+        step = int(sstep)
+        count = (amax - amin) // step + 1
+        idx = (int(sid) - amin) // step
+        return idx, count
+    return 0, 1
+
+
+def shard_items(items: List, shard_index: int, shard_count: int) -> List:
+    if shard_count <= 1:
+        return items
+    return [x for i, x in enumerate(items) if (i % shard_count) == shard_index]
+
+
+def ensure_csv_header(path: str, fields: List[str]) -> None:
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a+", newline="") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        f.seek(0, os.SEEK_END)
+        empty = f.tell() == 0
+        if empty:
+            writer = csv.DictWriter(f, fieldnames=fields)
+            writer.writeheader()
+            f.flush()
+            os.fsync(f.fileno())
+        fcntl.flock(f, fcntl.LOCK_UN)
+
+
+def append_row_locked(path: str, fields: List[str], row: Dict) -> None:
+    with open(path, "a", newline="") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        writer = csv.DictWriter(f, fieldnames=fields)
+        writer.writerow(row)
+        f.flush()
+        os.fsync(f.fileno())
+        fcntl.flock(f, fcntl.LOCK_UN)
+
+
+# -----------------------------
 # CLI and main
 # -----------------------------
 
@@ -416,6 +454,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--val-size", type=int, default=8192, help="validation set size")
     p.add_argument("--batch-size", type=int, default=1024, help="training batch size")
     p.add_argument("--lr", type=float, default=1e-3, help="AdamW learning rate")
+    # New: sharding (overridden by SLURM env if not set)
+    p.add_argument("--shard-index", type=int, default=None, help="0-based shard index")
+    p.add_argument("--shard-count", type=int, default=None, help="total shards")
     return p.parse_args()
 
 
@@ -424,10 +465,19 @@ def main():
     device = pick_device(args.device)
     set_global_seed(args.seed)
 
-    cfgs = build_grid()
+    # Build and shard the config list
+    full_cfgs = build_grid()
+    if args.shard_index is None or args.shard_count is None:
+        env_idx, env_cnt = detect_shard_from_env()
+        shard_index = env_idx if args.shard_index is None else args.shard_index
+        shard_count = env_cnt if args.shard_count is None else args.shard_count
+    else:
+        shard_index, shard_count = args.shard_index, args.shard_count
+
+    cfgs = shard_items(full_cfgs, shard_index, shard_count)
     total = len(cfgs)
 
-    os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
+    # CSV fields unchanged
     fields = [
         "LIST_LEN",
         "N_DIGITS",
@@ -449,42 +499,40 @@ def main():
         "batch_size",
         "device",
     ]
-    with open(args.output, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fields)
-        writer.writeheader()
+    # Header-once init with lock
+    ensure_csv_header(args.output, fields)
 
-        outer = tqdm(total=total, desc="grid", ncols=100)
-        for cfg in cfgs:
-            try:
-                metrics = train_one(
-                    cfg=cfg,
-                    device=device,
-                    train_steps=args.train_steps,
-                    batch_size=args.batch_size,
-                    eval_every=args.eval_every,
-                    early_stop_acc=args.early_stop_acc,
-                    val_size=args.val_size,
-                    base_seed=args.seed,
-                    lr=args.lr,
-                )
-            except RuntimeError:
-                metrics = {
-                    "val_acc": float("nan"),
-                    "steps_trained": 0,
-                    "train_time_sec": 0.0,
-                    "params_total": 0,
-                    "params_trainable": 0,
-                    "val_examples": args.val_size,
-                    "batch_size": args.batch_size,
-                }
+    outer = tqdm(total=total, desc=f"grid[{shard_index}/{shard_count}]", ncols=100)
+    for cfg in cfgs:
+        try:
+            metrics = train_one(
+                cfg=cfg,
+                device=device,
+                train_steps=args.train_steps,
+                batch_size=args.batch_size,
+                eval_every=args.eval_every,
+                early_stop_acc=args.early_stop_acc,
+                val_size=args.val_size,
+                base_seed=args.seed,
+                lr=args.lr,
+            )
+        except RuntimeError:
+            metrics = {
+                "val_acc": float("nan"),
+                "steps_trained": 0,
+                "train_time_sec": 0.0,
+                "params_total": 0,
+                "params_trainable": 0,
+                "val_examples": args.val_size,
+                "batch_size": args.batch_size,
+            }
 
-            row = {**asdict(cfg), **metrics, "device": str(device)}
-            writer.writerow(row)
-            f.flush()
-            outer.update(1)
-        outer.close()
+        row = {**asdict(cfg), **metrics, "device": str(device)}
+        append_row_locked(args.output, fields, row)
+        outer.update(1)
+    outer.close()
 
-    print(f"Wrote {total} rows to {args.output}")
+    print(f"Wrote {total} rows for shard {shard_index}/{shard_count} to {args.output}")
 
 
 if __name__ == "__main__":
