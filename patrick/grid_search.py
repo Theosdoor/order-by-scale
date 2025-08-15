@@ -352,11 +352,11 @@ def train_one(
 
 
 def build_grid() -> List[Config]:
-    LIST_LEN = list(range(2, 6))
+    LIST_LEN = list(range(1, 20))
     N_DIGITS = [100]
-    D_MODEL = [8, 32, 128, 256]
-    N_HEAD = [1, 2, 4]
-    N_LAYERS = list(range(2, 7))
+    D_MODEL = [128]
+    N_HEAD = [1]
+    N_LAYERS = list(range(1, 20))
     USE_LN = [False]
     USE_BIAS = [False]
     FREEZE_WV = [True]
