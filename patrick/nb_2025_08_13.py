@@ -21,6 +21,7 @@ from grid_search import make_validation_set
 from sklearn.decomposition import PCA
 import pickle
 from sklearn.svm import SVC
+import torch.nn.functional as F
 
 # Configure plotly to use static rendering if widgets fail
 import plotly.io as pio
@@ -299,6 +300,28 @@ if __name__ == "__main__":
     # Extract attention weights for SEP (position 2) attending to d1 (0) and d2 (1) in layer 0
     attn_sep_d1 = cache["pattern", 0].squeeze()[:, 2, 0].cpu().numpy()
     attn_sep_d2 = cache["pattern", 0].squeeze()[:, 2, 1].cpu().numpy()
+
+    plt.figure(figsize=(10, 4))
+    plt.subplot(1, 2, 1)
+    plt.hist(attn_sep_d1, bins=30, color="skyblue", edgecolor="black")
+    plt.xlabel("Attention to d1 (pos 0)")
+    plt.ylabel("Count")
+    plt.title("Histogram: SEP → d1 (Layer 0)")
+
+    plt.subplot(1, 2, 2)
+    plt.hist(attn_sep_d2, bins=30, color="salmon", edgecolor="black")
+    plt.xlabel("Attention to d2 (pos 1)")
+    plt.ylabel("Count")
+    plt.title("Histogram: SEP → d2 (Layer 0)")
+
+    plt.tight_layout()
+    plt.show()
+
+# %%
+
+if __name__ == "__main__":
+    attn_sep_d1 = cache["pattern", 1].squeeze()[:, -1, 2].cpu().numpy()
+    attn_sep_d2 = cache["pattern", 1].squeeze()[:, -1, 3].cpu().numpy()
 
     plt.figure(figsize=(10, 4))
     plt.subplot(1, 2, 1)
@@ -638,3 +661,122 @@ if __name__ == "__main__":
                       labels=("last", "prev"))
 
 
+
+# %% Demonstrate the two-slot algorithm on the validation set
+if __name__ == "__main__":
+    model.eval()
+
+    def cos_batch(a, b):  # (B,d)
+        return F.cosine_similarity(a, b, dim=-1)
+
+    wU = model.W_U  # (d_model, vocab)
+
+    write_cos, read_o1_cos, read_o2_cos = [], [], []
+    sep_pos, d1_pos, d2_pos, o1_pos, o2_pos = 2, 0, 1, 3, 4
+
+    contrib = {
+        "o1_sep_to_d1": [],
+        "o1_sep_to_d2": [],
+        "o2_sep_to_d1": [],
+        "o2_sep_to_d2": [],
+        "o2_o1_to_d1": [],
+        "o2_o1_to_d2": [],
+    }
+    acc_o2_orig, acc_o2_no_o1edge = 0, 0
+    tots = 0
+
+    with torch.no_grad():
+        for inputs, targets in [[inputs, data]]:
+            inputs = inputs.to(DEV)
+
+            logits, cache = model.run_with_cache(inputs, return_type="logits")
+
+            # Residuals
+            r0 = cache["hook_embed"] + cache["hook_pos_embed"]                 # (B,T,d)
+            rL0 = cache["blocks.0.hook_resid_post"]                            # (B,T,d)
+            rL1 = cache["blocks.1.hook_resid_post"]                            # (B,T,d)
+
+            # Attention patterns
+            pat0 = cache["blocks.0.attn.hook_pattern"][:, 0]                   # (B,Q,K)
+            pat1 = cache["blocks.1.attn.hook_pattern"][:, 0]                   # (B,Q,K)
+
+            # --- Layer 0: write both digits into SEP
+            a1 = pat0[:, sep_pos, d1_pos].unsqueeze(-1)                        # (B,1)
+            a2 = pat0[:, sep_pos, d2_pos].unsqueeze(-1)                        # (B,1)
+
+            r_sep_pre  = r0[:, sep_pos, :]
+            r_d1_pre   = r0[:, d1_pos, :]
+            r_d2_pre   = r0[:, d2_pos, :]
+            M_true     = rL0[:, sep_pos, :]                                    # r_SEP^(1)
+            M_pred     = r_sep_pre + a1*r_d1_pre + a2*r_d2_pre                 # predicted by copy rule
+
+            write_cos.append(cos_batch(M_true, M_pred).cpu())
+
+            # --- Layer 1: read M into o1 and o2
+            b1  = pat1[:, o1_pos, sep_pos].unsqueeze(-1)                       # o1<-SEP
+            c1  = pat1[:, o2_pos, sep_pos].unsqueeze(-1)                       # o2<-SEP
+            d1w = pat1[:, o2_pos, o1_pos].unsqueeze(-1)                        # o2<-o1
+
+            r_o1_pre  = rL0[:, o1_pos, :]
+            r_o2_pre  = rL0[:, o2_pos, :]
+            r_o1_post = rL1[:, o1_pos, :]
+            r_o2_post = rL1[:, o2_pos, :]
+
+            r_o1_pred = r_o1_pre + b1*M_true
+            r_o2_pred = r_o2_pre + c1*M_true + d1w*r_o1_pre
+
+            read_o1_cos.append(cos_batch(r_o1_post, r_o1_pred).cpu())
+            read_o2_cos.append(cos_batch(r_o2_post, r_o2_pred).cpu())
+
+            # --- Direct logit attribution (per-source contributions)
+            d1_tok = inputs[:, d1_pos]                                         # (B,)
+            d2_tok = inputs[:, d2_pos]
+
+            w_d1 = wU[:, d1_tok].T                                             # (B,d)
+            w_d2 = wU[:, d2_tok].T
+
+            def dot(v, w):  # (B,d)·(B,d)->(B,)
+                return (v * w).sum(dim=-1)
+
+            # o1 logits
+            contrib["o1_sep_to_d1"].append(dot(b1*M_true, w_d1).cpu())
+            contrib["o1_sep_to_d2"].append(dot(b1*M_true, w_d2).cpu())
+
+            # o2 logits
+            contrib["o2_sep_to_d1"].append(dot(c1*M_true,    w_d1).cpu())
+            contrib["o2_sep_to_d2"].append(dot(c1*M_true,    w_d2).cpu())
+            contrib["o2_o1_to_d1"].append(dot(d1w*r_o1_pre,  w_d1).cpu())
+            contrib["o2_o1_to_d2"].append(dot(d1w*r_o1_pre,  w_d2).cpu())
+
+            # --- Counterfactual: remove the o2<-o1 edge
+            r_o2_no_o1 = r_o2_post - d1w*r_o1_pre
+            logits_o2_cf = r_o2_no_o1 @ wU
+            pred_o2_cf = logits_o2_cf.argmax(dim=-1)
+
+            pred_o2 = logits[:, o2_pos, :].argmax(dim=-1)
+            acc_o2_orig     += (pred_o2    == d2_tok).sum().item()
+            acc_o2_no_o1edge += (pred_o2_cf == d2_tok).sum().item()
+            tots += inputs.size(0)
+
+    # --- Summary
+    write_cos = torch.cat(write_cos)
+    read_o1_cos = torch.cat(read_o1_cos)
+    read_o2_cos = torch.cat(read_o2_cos)
+
+    print(f"L0 write recon cos  : mean {write_cos.mean():.4f}  median {write_cos.median():.4f}")
+    print(f"L1 read o1 recon cos: mean {read_o1_cos.mean():.4f}  median {read_o1_cos.median():.4f}")
+    print(f"L1 read o2 recon cos: mean {read_o2_cos.mean():.4f}  median {read_o2_cos.median():.4f}")
+
+    for k in contrib:
+        contrib[k] = torch.cat(contrib[k])
+    print("\nDirect logit contributions (means):")
+    print(f"  o1: SEP→d1 {contrib['o1_sep_to_d1'].mean():.4f}, SEP→d2 {contrib['o1_sep_to_d2'].mean():.4f}")
+    print(f"  o2: SEP→d2 {contrib['o2_sep_to_d2'].mean():.4f}, SEP→d1 {contrib['o2_sep_to_d1'].mean():.4f}")
+    print(f"  o2: o1 →d1 {contrib['o2_o1_to_d1'].mean():.4f}  (expect <0),  o1→d2 {contrib['o2_o1_to_d2'].mean():.4f}")
+
+    frac_neg = (contrib["o2_o1_to_d1"] < 0).float().mean().item()
+    print(f"\nFrac(o2: o1→d1 contribution < 0): {frac_neg:.3f}")
+
+    print(f"\nSecond-digit accuracy:")
+    print(f"  original : {acc_o2_orig/tots:.4f}")
+    print(f"  no o2←o1 : {acc_o2_no_o1edge/tots:.4f}  (counterfactual by removing that path)")
