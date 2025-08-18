@@ -22,6 +22,7 @@ if __name__ == "__main__":
         & (df["WEIGHT_DECAY"] == 0.01)
         & (df["LIST_LEN"] <= 10)
         & (df["N_LAYERS"] <= 10)
+        & (1 < df["N_LAYERS"])
     ].copy()
     standard_df = standard_df[["LIST_LEN", "N_LAYERS", "run_idx", "val_acc"]]
     standard_df = standard_df.groupby(
