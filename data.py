@@ -26,9 +26,6 @@ DEV = (
 device = DEV
 torch.manual_seed(0)
 
-# For backward compatibility with v1
-USE_PAD = True # whether to use the PAD token in the input sequences (or just SEP)
-
 # %%
 def get_dataset():
     # Create all possible combinations of digits
@@ -46,7 +43,7 @@ def get_dataset():
         targets[:, :LIST_LEN] = data_tensor
         targets[:, LIST_LEN + 1 :] = data_tensor
         inputs = targets.clone()
-        inputs[:, LIST_LEN + 1 :] = PAD if USE_PAD else SEP  # backward compat
+        inputs[:, LIST_LEN + 1 :] = PAD
         return inputs, targets
 
     if NO_DUPES:
@@ -121,7 +118,7 @@ if __name__ == "__main__":
     if TRAIN_DUPES_ONLY and not NO_DUPES:
         dupes_suffix += '_traindupesonly'
 
-    DATASET_NAME = f"listlen{LIST_LEN}_digits{N_DIGITS}_{dupes_suffix}{'_noPAD' if not USE_PAD else ''}"
+    DATASET_NAME = f"listlen{LIST_LEN}_digits{N_DIGITS}_{dupes_suffix}"
     DATASET_PATH = f"data/{DATASET_NAME}.pt"
 
     if os.path.exists(DATASET_PATH):
