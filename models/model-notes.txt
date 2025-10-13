@@ -1,8 +1,2 @@
-v1 (deprecated)
-v2+ - usePAD = True in data.py
-v3 - TRAIN_DUPES_ONLY = True in data.py
-v4 - NO_DUPES = True in data.py
-
-
-Specific
 v2_2layer_100dig_128d - 92% accuracy
+2layer_100dig_64d - 92% acc
