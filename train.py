@@ -25,8 +25,19 @@ from tqdm.auto import tqdm
 
 from transformer_lens import HookedTransformer, HookedTransformerConfig, utils
 
+from model_utils import (
+    build_attention_mask,
+    attach_custom_mask,
+    strip_bias,
+    set_WV_identity_and_freeze,
+    set_WO_identity_and_freeze,
+    save_model,
+    load_model,
+    make_model,
+    accuracy,
+    configure_runtime,
+)
 from data import get_dataset
-from model_utils import strip_bias, set_WV_identity_and_freeze, set_WO_identity_and_freeze
 
 # Configure plotly to use static rendering if widgets fail
 import plotly.io as pio
@@ -47,7 +58,7 @@ SEQ_LEN = LIST_LEN * 2 + 1 # [d1, d2, SEP, o1, o2]
 N_DIGITS = 100
 DIGITS = list(range(N_DIGITS)) # 100 digits from 0 to 99
 MASK = N_DIGITS # special masking token for o1 and o2
-SEP = N_DIGITS + 1 # special seperator token for the model to think about the input (+1 to avoid confusion with the last digit)
+SEP = N_DIGITS+1 # special seperator token for the model to think about the input (+1 to avoid confusion with the last digit)
 VOCAB = len(DIGITS) + 2  # + the special tokens
 
 D_MODEL = 64
@@ -83,6 +94,9 @@ DEV = (
 )
 torch.manual_seed(0)
 
+# Provide runtime config so we don't need to thread constants everywhere
+configure_runtime(list_len=LIST_LEN, seq_len=SEQ_LEN, vocab=VOCAB, device=DEV)
+
 
 # %%
 # ---------- mask ----------
@@ -95,17 +109,8 @@ torch.manual_seed(0)
 # o2  -inf  -inf    0      0    -inf
 # (queries)
 
-mask_bias = torch.triu(torch.ones(SEQ_LEN, SEQ_LEN) * float("-inf")) # upper triangular bias mask (lead_diag & above = -inf, rest = 0)
-mask_bias[0, 0] = 0. # don't want a full row of -inf! otherwise we get nan erros & training breaks
-mask_bias[LIST_LEN+1:, :LIST_LEN] = float("-inf") # stop output tokens from attending to input tokens
-mask_bias = mask_bias.unsqueeze(0).unsqueeze(0) # (1,1,T,T) broadcastable across batch and heads
-
-# L0: keep outputs self-only and allow SEP->digits; avoid all -inf rows
-mask_bias_l0 = mask_bias.clone()
-mask_bias_l0[..., LIST_LEN+1:, :] = float("-inf") # block all for outputs
-idx = torch.arange(LIST_LEN+1, SEQ_LEN)  # re-enable self for outputs
-mask_bias_l0[..., idx, idx] = 0.0
-
+# view mask (build_attention_mask expects (LIST_LEN, SEQ_LEN))
+mask_bias, _ = build_attention_mask(LIST_LEN, SEQ_LEN)
 print(mask_bias.cpu()[0][0])
 
 # %%
@@ -129,86 +134,7 @@ print(f"Train dataset size: {len(train_ds)}, Validation dataset size: {len(val_d
 
 
 # %%
-# ---------- config helper ----------
-def attach_custom_mask(model):
-    def _mask(scores, hook=None):
-        # scores: (batch, heads, Q, K)
-        return scores + mask_bias.to(scores.device)
-    
-    def _mask_l0(scores, hook=None):
-        # layer-0 special mask: o1/o2 only self; SEP can read d1/d2
-        return scores + mask_bias_l0.to(scores.device)
-    
-    # Completely suppress attention for oi in L0 (safe: zero pattern rows, not -inf scores)
-    def _zero_o_rows(pattern, hook=None):
-        # pattern: [B, H, Q, K]
-        start_o = LIST_LEN+1 # first o_i index
-        if start_o < SEQ_LEN:
-            pattern = pattern.clone()
-            pattern[..., start_o:SEQ_LEN, :] = 0.0
-        return pattern
-    
-    # register the same mask hook on every layer
-    for i, block in enumerate(model.blocks):
-        if i == 0:
-            block.attn.hook_attn_scores.add_perma_hook(_mask_l0, dir="fwd")
-            block.attn.hook_pattern.add_perma_hook(_zero_o_rows, dir="fwd")
-        else:
-            block.attn.hook_attn_scores.add_perma_hook(_mask, dir="fwd")
-
-
-def make_model(n_layers=N_LAYER, n_heads=N_HEAD, d_model=D_MODEL, ln=USE_LN, use_bias=USE_BIAS, freeze_wv=FREEZE_WV, freeze_wo=FREEZE_WO):
-    cfg = HookedTransformerConfig(
-        n_layers = n_layers,
-        n_heads = n_heads,
-        d_model = d_model,
-        d_head = d_model//n_heads,
-        n_ctx=SEQ_LEN,
-        d_vocab=VOCAB,
-        attn_only=True, # no MLP!
-        normalization_type=("LN" if ln else None),
-    )
-    model = HookedTransformer(cfg).to(DEV)
-    if freeze_wv:
-        set_WV_identity_and_freeze(model, d_model)
-    if freeze_wo:
-        set_WO_identity_and_freeze(model, d_model)
-    if not use_bias:
-        strip_bias(model)
-    
-    attach_custom_mask(model)
-    return model
-
-# %%
-# ----- Model saving / loading helpers ------
-def save_model(model, path = MODEL_PATH):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    torch.save(model.state_dict(), path)
-    print(f"Model saved to {path}")
-
-def load_model(path = MODEL_PATH, device = DEV):
-    print("Loading model from", path)
-    model = make_model()
-    model.load_state_dict(
-        torch.load(path, map_location=device)
-    )  # map weights to target device
-    model.eval()
-    return model
-
-# %%
 # ---------- utilities ----------
-def accuracy(m):
-    m.eval()
-    hits = tots = 0
-    with torch.no_grad():
-        for inputs, targets in val_dl:
-            logits = m(inputs.to(DEV))[:, LIST_LEN+1:]  # (batch, 2, vocab)
-            preds = logits.argmax(-1)
-            hits += (preds == targets[:, LIST_LEN+1:].to(DEV)).sum().item()
-            tots += preds.numel()
-    return hits / tots
-
-
 def train(m, max_steps=10_000, early_stop_acc=0.999, checkpoints=False, lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY, verbose=True):
     opt = torch.optim.AdamW(m.parameters(), lr, weight_decay=weight_decay)
     ce = torch.nn.CrossEntropyLoss()
@@ -222,7 +148,7 @@ def train(m, max_steps=10_000, early_stop_acc=0.999, checkpoints=False, lr=LEARN
         opt.step()
         opt.zero_grad()
         if (step + 1) % 100 == 0:
-            acc = accuracy(m)
+            acc = accuracy(m, val_dl, LIST_LEN, DEV)
             if acc > early_stop_acc:
                 print(f"Early stopping at step {step + 1} with accuracy {acc:.2%} >= {early_stop_acc:.2%}")
                 break
@@ -232,7 +158,7 @@ def train(m, max_steps=10_000, early_stop_acc=0.999, checkpoints=False, lr=LEARN
             if checkpoints and (step+1) % 50_000 == 0:
                 save_model(m, MODEL_PATH)
             
-    print(f"Final accuracy: {accuracy(m):.2%}")
+    print(f"Final accuracy: {accuracy(m, val_dl, LIST_LEN, DEV):.2%}")
 
 
 # %%
@@ -325,18 +251,22 @@ for spec in specs:
     model = make_model(
         n_layers=full_spec['n_layers'],
         n_heads=full_spec['n_heads'],
-        d_model=full_spec['d_model'], 
+        d_model=full_spec['d_model'],
         ln=full_spec['ln'],
         use_bias=full_spec['bias'],
         freeze_wv=full_spec['freeze_wv'],
         freeze_wo=full_spec['freeze_wo'],
+        seq_len=SEQ_LEN,
+        vocab=VOCAB,
+        list_len=LIST_LEN,
+        device=DEV,
     )
 
     train(model, max_steps=50_000, lr=full_spec['lr'], weight_decay=full_spec['weight_decay'], verbose=True)
     
     # Add all spec parameters to the results
     result = full_spec.copy()
-    result['val_acc'] = round(accuracy(model), 4)
+    result['val_acc'] = round(accuracy(model, val_dl, LIST_LEN, DEV), 4)
     rows.append(result)
 
 df = pd.DataFrame(rows)
@@ -383,13 +313,38 @@ print(df.to_markdown(index=False))
 load_existing = True  # Set to False to always train a new model
 
 if os.path.exists(MODEL_PATH) and load_existing:
-    model = load_model(MODEL_PATH, device=DEV)
+    model = load_model(
+        MODEL_PATH,
+        n_layers=N_LAYER,
+        n_heads=N_HEAD,
+        d_model=D_MODEL,
+        ln=USE_LN,
+        use_bias=USE_BIAS,
+        freeze_wv=FREEZE_WV,
+        freeze_wo=FREEZE_WO,
+        seq_len=SEQ_LEN,
+        vocab=VOCAB,
+        list_len=LIST_LEN,
+        device=DEV,
+    )
 else:
     if os.path.exists(MODEL_PATH):
         MODEL_PATH = MODEL_PATH.replace(".pt", "_new.pt")
         print(f"Model path already exists. Saving new model to {MODEL_PATH}")
     print("Training model")
-    model = make_model()
+    model = make_model(
+        n_layers=N_LAYER,
+        n_heads=N_HEAD,
+        d_model=D_MODEL,
+        ln=USE_LN,
+        use_bias=USE_BIAS,
+        freeze_wv=FREEZE_WV,
+        freeze_wo=FREEZE_WO,
+        seq_len=SEQ_LEN,
+        vocab=VOCAB,
+        list_len=LIST_LEN,
+        device=DEV,
+    )
     train(model, max_steps=MAX_TRAIN_STEPS, checkpoints=USE_CHECKPOINTING)
     save_model(model, MODEL_PATH)
 
