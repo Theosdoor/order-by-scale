@@ -3,6 +3,19 @@ import torch
 from dataclasses import dataclass
 from transformer_lens import HookedTransformer, HookedTransformerConfig, utils
 
+__all__ = [
+	"configure_runtime",
+	"build_attention_mask",
+	"attach_custom_mask",
+	"strip_bias",
+	"set_WV_identity_and_freeze",
+	"set_WO_identity_and_freeze",
+	"make_model",
+	"accuracy",
+	"save_model",
+	"load_model",
+]
+
 DEV = (
     "cuda"
     if torch.cuda.is_available()
@@ -13,14 +26,14 @@ torch.manual_seed(0)
 # ---------- runtime config (optional) ----------
 @dataclass
 class _RuntimeConfig:
-	list_len: int | None = None
-	seq_len: int | None = None
-	vocab: int | None = None
-	device: str | torch.device = DEV
+	list_len = None
+	seq_len = None
+	vocab = None
+	device = DEV
 
 _RUNTIME = _RuntimeConfig()
 
-def configure_runtime(*, list_len: int, seq_len: int, vocab: int, device: str | torch.device = DEV):
+def configure_runtime(*, list_len, seq_len, vocab, device = DEV):
 	"""Set module-level runtime configuration so callers can omit repeating constants.
 
 	All arguments are required except device (defaults to detected DEV).
@@ -39,23 +52,40 @@ def configure_runtime(*, list_len: int, seq_len: int, vocab: int, device: str | 
 # o1  -inf  -inf    0    -inf   -inf
 # o2  -inf  -inf    0      0    -inf
 # (queries)
-def build_attention_mask(LIST_LEN, SEQ_LEN):
-	mask_bias = torch.triu(torch.ones(SEQ_LEN, SEQ_LEN) * float("-inf")) # upper triangular bias mask (lead_diag & above = -inf, rest = 0)
-	mask_bias[0, 0] = 0. # don't want a full row of -inf! otherwise we get nan erros & training breaks
-	mask_bias[LIST_LEN+1:, :LIST_LEN] = float("-inf") # stop output tokens from attending to input tokens
+def build_attention_mask(list_len = None, seq_len = None):
+	"""Build attention masks, defaulting to configured runtime values.
+
+	Returns a tuple of (mask_bias, mask_bias_l0), both with shape (1,1,T,T).
+	"""
+	if list_len is None:
+		list_len = _RUNTIME.list_len
+	if seq_len is None:
+		seq_len = _RUNTIME.seq_len
+	assert list_len is not None and seq_len is not None, "list_len and seq_len must be provided or configured via configure_runtime()"
+
+	mask_bias = torch.triu(torch.ones(seq_len, seq_len) * float("-inf")) # upper triangular bias mask (lead_diag & above = -inf, rest = 0)
+	mask_bias[0, 0] = 0. # don't want a full row of -inf! otherwise we get nan errors & training breaks
+	mask_bias[list_len+1:, :list_len] = float("-inf") # stop output tokens from attending to input tokens
 	mask_bias = mask_bias.unsqueeze(0).unsqueeze(0) # (1,1,T,T) broadcastable across batch and heads
 
 	# L0: keep outputs self-only and allow SEP->digits; avoid all -inf rows
 	mask_bias_l0 = mask_bias.clone()
-	mask_bias_l0[..., LIST_LEN+1:, :] = float("-inf") # block all for outputs
-	idx = torch.arange(LIST_LEN+1, SEQ_LEN)  # re-enable self for outputs
+	mask_bias_l0[..., list_len+1:, :] = float("-inf") # block all for outputs
+	idx = torch.arange(list_len+1, seq_len)  # re-enable self for outputs
 	mask_bias_l0[..., idx, idx] = 0.0
 
 	return mask_bias, mask_bias_l0
 
-def attach_custom_mask(model, LIST_LEN, SEQ_LEN):
+def attach_custom_mask(model, list_len = None, seq_len = None):
+	"""Attach masking hooks to a model, defaulting to runtime-config lengths."""
+	if list_len is None:
+		list_len = _RUNTIME.list_len
+	if seq_len is None:
+		seq_len = _RUNTIME.seq_len
+	assert list_len is not None and seq_len is not None, "list_len and seq_len must be provided or configured via configure_runtime()"
+
 	# Pre-compute masks used by hooks (define before closures for clarity and static analyzers)
-	mask_bias, mask_bias_l0 = build_attention_mask(LIST_LEN, SEQ_LEN)
+	mask_bias, mask_bias_l0 = build_attention_mask(list_len, seq_len)
 
 	def _mask(scores, hook=None):
 		# scores: (batch, heads, Q, K)
@@ -68,10 +98,10 @@ def attach_custom_mask(model, LIST_LEN, SEQ_LEN):
 	# Completely suppress attention for oi in L0 (safe: zero pattern rows, not -inf scores)
 	def _zero_o_rows(pattern, hook=None):
 		# pattern: [B, H, Q, K]
-		start_o = LIST_LEN + 1  # first o_i index
-		if start_o < SEQ_LEN:
+		start_o = list_len + 1  # first o_i index
+		if start_o < seq_len:
 			pattern = pattern.clone()
-			pattern[..., start_o:SEQ_LEN, :] = 0.0
+			pattern[..., start_o:seq_len, :] = 0.0
 		return pattern
 
 	# register the same mask hook on every layer
@@ -135,17 +165,17 @@ def set_WO_identity_and_freeze(model, d_model):
 
 def make_model(
 	*,
-	n_layers: int,
-	n_heads: int,
-	d_model: int,
-	ln: bool = False,
-	use_bias: bool = False,
-	freeze_wv: bool = True,
-	freeze_wo: bool = True,
-	seq_len: int | None = None,
-	vocab: int | None = None,
-	list_len: int | None = None,
-	device: str | torch.device | None = None,
+	n_layers,
+	n_heads,
+	d_model,
+	ln = False,
+	use_bias = False,
+	freeze_wv = True,
+	freeze_wo = True,
+	seq_len = None,
+	vocab = None,
+	list_len = None,
+	device = None,
 ):
 	"""Construct a HookedTransformer with our custom mask.
 
@@ -188,7 +218,7 @@ def make_model(
 
 
 # metrics
-def accuracy(m, val_dl, list_len: int | None = None, device: str | torch.device | None = None):
+def accuracy(m, val_dl, list_len=None, device=None):
 	if list_len is None:
 		list_len = _RUNTIME.list_len
 	if device is None:
@@ -213,7 +243,8 @@ def save_model(model, path):
 def load_model(path, **model_kwargs):
 	"""Load weights into a freshly constructed model.
 
-	Pass the same kwargs you would pass to make_model (including device, seq_len, vocab, list_len, etc.).
+	Accepts any kwargs for make_model. If seq_len/list_len/vocab/device are omitted,
+	the configured runtime values will be used.
 	"""
 	device = model_kwargs.get("device", DEV)
 	print("Loading model from", path)
