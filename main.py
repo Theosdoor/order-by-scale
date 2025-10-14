@@ -20,8 +20,6 @@ import pandas as pd, itertools
 from tqdm.auto import tqdm
 
 from transformer_lens import utils
-
-from data import get_dataset
 from model_utils import (
     configure_runtime,
     build_attention_mask,
@@ -30,6 +28,8 @@ from model_utils import (
     save_model,
     accuracy,
 )
+
+from data import get_dataset
 
 # Configure plotly to use static rendering if widgets fail
 import plotly.io as pio
@@ -52,7 +52,7 @@ MASK = N_DIGITS # special masking token for o1 and o2
 SEP = N_DIGITS + 1 # special seperator token for the model to think about the input (+1 to avoid confusion with the last digit)
 VOCAB = len(DIGITS) + 2  # + the special tokens
 
-D_MODEL = 128
+D_MODEL = 64
 N_HEAD = 1
 N_LAYER = 2
 USE_LN = False # use layer norm in model
@@ -60,26 +60,31 @@ USE_BIAS = False # use bias in model
 FREEZE_WV = True # no value matrix in attn 
 FREEZE_WO = True # no output matrix in attn (i.e. attn head can only copy inputs to outputs)
 
-LEARNING_RATE = 1e-3 # default 1e-3
-WEIGHT_DECAY = 0.01 # default 0.01
-MAX_TRAIN_STEPS = 50_000 # max training steps
-USE_CHECKPOINTING = False # whether to use checkpointing for training
-
-MODEL_NAME = f'{N_LAYER}layer_{N_DIGITS}dig_{D_MODEL}d'
-MODEL_PATH = "artifacts/" + MODEL_NAME + ".pt"
+MODEL_NAME = '2layer_100dig_64d'
+MODEL_PATH = "models/" + MODEL_NAME + ".pt"
 
 DEV = (
     "cuda"
     if torch.cuda.is_available()
-    else ("mps" if torch.backends.mps.is_available() else "cpu")
+    else "cpu"
 )
 torch.manual_seed(0)
 
 # Provide runtime config so we don't need to thread constants everywhere
 configure_runtime(list_len=LIST_LEN, seq_len=SEQ_LEN, vocab=VOCAB, device=DEV)
 
+
 # %%
-# ---------- mask (for visualization) ----------
+# ---------- mask ----------
+# attention mask for [d1, d2, SEP, o1, o2] looks like this:
+# -    d1    d2    SEP    o1    o2   (keys)
+# d1  -inf  -inf   -inf  -inf  -inf
+# d2   0    -inf   -inf  -inf  -inf
+# SEP  0      0    -inf  -inf  -inf
+# o1  -inf  -inf    0    -inf   -inf
+# o2  -inf  -inf    0      0    -inf
+# (queries)
+
 mask_bias, _mask_bias_l0 = build_attention_mask()
 
 # %%
@@ -102,39 +107,8 @@ print("Target:", train_ds[0][1])
 print(f"Train dataset size: {len(train_ds)}, Validation dataset size: {len(val_ds)}")
 
 # %%
-# (No local hooks or helpers needed; model_utils handles masking and construction.)
-
-
-def train(m, max_steps=10_000, early_stop_acc=0.999, checkpoints=False, lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY, verbose=True):
-    opt = torch.optim.AdamW(m.parameters(), lr, weight_decay=weight_decay)
-    ce = torch.nn.CrossEntropyLoss()
-    dl = itertools.cycle(train_dl)  # infinite iterator
-    for step in tqdm(range(max_steps), desc="Training"):
-        inputs, targets = next(dl)
-        # get logits/loss for output tokens only
-        logits = m(inputs.to(DEV))[:, LIST_LEN+1:].reshape(-1, VOCAB) 
-        loss = ce(logits, targets[:, LIST_LEN+1:].reshape(-1).to(DEV))
-        loss.backward()
-        opt.step()
-        opt.zero_grad()
-        if (step + 1) % 100 == 0:
-            acc = accuracy(m, val_dl)
-            if acc > early_stop_acc:
-                print(f"Early stopping at step {step + 1} with accuracy {acc:.2%} >= {early_stop_acc:.2%}")
-                break
-            update_every = max(min(10_000, max_steps//20), 1000)
-            if verbose and (step+1) % update_every == 0:
-                print(f"Step {step + 1}, Loss: {loss.item():.4f}, Accuracy: {acc:.2%}")
-            if checkpoints and (step+1) % 50_000 == 0:
-                save_model(m, MODEL_PATH)
-            
-    print(f"Final accuracy: {accuracy(m, val_dl):.2%}")
-
-# %%
-# LOAD existing or train and SAVE new model
-load_existing = True  # Set to False to always train a new model
-
-if os.path.exists(MODEL_PATH) and load_existing:
+# LOAD existing model
+if os.path.exists(MODEL_PATH):
     model = load_model(
         MODEL_PATH,
         n_layers=N_LAYER,
@@ -147,22 +121,9 @@ if os.path.exists(MODEL_PATH) and load_existing:
         device=DEV,
     )
 else:
-    if os.path.exists(MODEL_PATH):
-        MODEL_PATH = MODEL_PATH.replace(".pt", "_new.pt")
-        print(f"Model path already exists. Saving new model to {MODEL_PATH}")
-    print("Training model")
-    model = make_model(
-        n_layers=N_LAYER,
-        n_heads=N_HEAD,
-        d_model=D_MODEL,
-        ln=USE_LN,
-        use_bias=USE_BIAS,
-        freeze_wv=FREEZE_WV,
-        freeze_wo=FREEZE_WO,
-        device=DEV,
-    )
-    train(model, max_steps=MAX_TRAIN_STEPS, checkpoints=USE_CHECKPOINTING)
-    save_model(model, MODEL_PATH)
+    raise FileNotFoundError(f"Model file {MODEL_PATH} does not exist. Please train the model first.")
+
+accuracy(model, val_dl)
 
 # %% [markdown]
 # # Results
@@ -502,6 +463,7 @@ for l in range(model_with_avg_attn.cfg.n_layers):
     )
 
 print("Accuracy with avg-attn:", accuracy(model_with_avg_attn, val_dl))
+
 
 # %% [markdown]
 # Using the mean attention pattern destroys performance.

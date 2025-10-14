@@ -2,11 +2,6 @@ import torch
 from torch.utils.data import TensorDataset
 import itertools
 
-DEV = (
-    "cuda"
-    if torch.cuda.is_available()
-    else ("mps" if torch.backends.mps.is_available() else "cpu")
-)
 torch.manual_seed(0) # for reproducibility
 
 def get_dataset(

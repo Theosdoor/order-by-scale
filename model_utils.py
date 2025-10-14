@@ -16,11 +16,6 @@ __all__ = [
 	"load_model",
 ]
 
-DEV = (
-    "cuda"
-    if torch.cuda.is_available()
-    else ("mps" if torch.backends.mps.is_available() else "cpu")
-)
 torch.manual_seed(0)
 
 # ---------- runtime config (optional) ----------
@@ -29,11 +24,11 @@ class _RuntimeConfig:
 	list_len = None
 	seq_len = None
 	vocab = None
-	device = DEV
+	device = None
 
 _RUNTIME = _RuntimeConfig()
 
-def configure_runtime(*, list_len, seq_len, vocab, device = DEV):
+def configure_runtime(*, list_len, seq_len, vocab, device):
 	"""Set module-level runtime configuration so callers can omit repeating constants.
 
 	All arguments are required except device (defaults to detected DEV).
