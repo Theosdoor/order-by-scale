@@ -141,7 +141,6 @@ accuracy(model, val_dl)
 
 
 
-# 50% accuracy?
 
 
 
@@ -322,7 +321,7 @@ for l in range(model_with_avg_attn.cfg.n_layers):
         mk_hook(avg_pats[l]), dir="fwd"
     )
 
-print("Accuracy with avg-attn:", accuracy(model_with_avg_attn))
+print("Accuracy with avg-attn:", accuracy(model_with_avg_attn, val_dl))
 
 # %% [markdown]
 # ## Interp
@@ -1549,3 +1548,4 @@ for i in range(min(15, X_val.shape[0])):
     print(f"ex{i}: before={preds_before[i, :min(L,2)].tolist()} -> after={preds_after[i, :min(L,2)].tolist()}")
 
 
+# %%

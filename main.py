@@ -125,6 +125,11 @@ else:
 
 accuracy(model, val_dl)
 
+
+
+
+
+
 # %% [markdown]
 # # Results
 
@@ -1172,3 +1177,4 @@ plt.show()
 
 
 
+# %%

@@ -187,7 +187,7 @@ def make_model(
 		vocab = _RUNTIME.vocab
 	if list_len is None:
 		list_len = _RUNTIME.list_len
-	dev = device or _RUNTIME.device or DEV
+	dev = device or _RUNTIME.device
 
 	assert seq_len is not None and vocab is not None and list_len is not None, "seq_len, vocab, and list_len must be provided or configured via configure_runtime()"
 	cfg = HookedTransformerConfig(
@@ -241,7 +241,7 @@ def load_model(path, **model_kwargs):
 	Accepts any kwargs for make_model. If seq_len/list_len/vocab/device are omitted,
 	the configured runtime values will be used.
 	"""
-	device = model_kwargs.get("device", DEV)
+	device = model_kwargs.get("device", _RUNTIME.device)
 	print("Loading model from", path)
 	model = make_model(**model_kwargs)
 	model.load_state_dict(
