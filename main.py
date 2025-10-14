@@ -19,9 +19,17 @@ import einops
 import pandas as pd, itertools
 from tqdm.auto import tqdm
 
-from transformer_lens import HookedTransformer, HookedTransformerConfig, utils
+from transformer_lens import utils
 
 from data import get_dataset
+from model_utils import (
+    configure_runtime,
+    build_attention_mask,
+    make_model,
+    load_model,
+    save_model,
+    accuracy,
+)
 
 # Configure plotly to use static rendering if widgets fail
 import plotly.io as pio
@@ -67,27 +75,12 @@ DEV = (
 )
 torch.manual_seed(0)
 
+# Provide runtime config so we don't need to thread constants everywhere
+configure_runtime(list_len=LIST_LEN, seq_len=SEQ_LEN, vocab=VOCAB, device=DEV)
+
 # %%
-# ---------- mask ----------
-# attention mask for [d1, d2, SEP, o1, o2] looks like this:
-# -    d1    d2    SEP    o1    o2   (keys)
-# d1  -inf  -inf   -inf  -inf  -inf
-# d2   0    -inf   -inf  -inf  -inf
-# SEP  0      0    -inf  -inf  -inf
-# o1  -inf  -inf    0    -inf   -inf
-# o2  -inf  -inf    0      0    -inf
-# (queries)
-
-mask_bias = torch.triu(torch.ones(SEQ_LEN, SEQ_LEN) * float("-inf")) # upper triangular bias mask (lead_diag & above = -inf, rest = 0)
-mask_bias[0, 0] = 0. # don't want a full row of -inf! otherwise we get nan erros & training breaks
-mask_bias[LIST_LEN+1:, :LIST_LEN] = float("-inf") # stop output tokens from attending to input tokens
-mask_bias = mask_bias.unsqueeze(0).unsqueeze(0) # (1,1,T,T) broadcastable across batch and heads
-
-# L0: keep outputs self-only and allow SEP->digits; avoid all -inf rows
-mask_bias_l0 = mask_bias.clone()
-mask_bias_l0[..., LIST_LEN+1:, :] = float("-inf") # block all for outputs
-idx = torch.arange(LIST_LEN+1, SEQ_LEN)  # re-enable self for outputs
-mask_bias_l0[..., idx, idx] = 0.0
+# ---------- mask (for visualization) ----------
+mask_bias, _mask_bias_l0 = build_attention_mask()
 
 # %%
 # ---------- dataset ----------
@@ -109,131 +102,7 @@ print("Target:", train_ds[0][1])
 print(f"Train dataset size: {len(train_ds)}, Validation dataset size: {len(val_ds)}")
 
 # %%
-# ---------- config helper ----------
-def attach_custom_mask(model):
-    def _mask(scores, hook=None):
-        # scores: (batch, heads, Q, K)
-        return scores + mask_bias.to(scores.device)
-    
-    def _mask_l0(scores, hook=None):
-        # layer-0 special mask: o1/o2 only self; SEP can read d1/d2
-        return scores + mask_bias_l0.to(scores.device)
-    
-    # Completely suppress attention for oi in L0 (safe: zero pattern rows, not -inf scores)
-    def _zero_o_rows(pattern, hook=None):
-        # pattern: [B, H, Q, K]
-        start_o = LIST_LEN+1 # first o_i index
-        if start_o < SEQ_LEN:
-            pattern = pattern.clone()
-            pattern[..., start_o:SEQ_LEN, :] = 0.0
-        return pattern
-    
-    # register the same mask hook on every layer
-    for i, block in enumerate(model.blocks):
-        if i == 0:
-            block.attn.hook_attn_scores.add_perma_hook(_mask_l0, dir="fwd")
-            block.attn.hook_pattern.add_perma_hook(_zero_o_rows, dir="fwd")
-        else:
-            block.attn.hook_attn_scores.add_perma_hook(_mask, dir="fwd")
-
-
-def strip_bias(m):
-    for mod in m.modules():
-        if hasattr(mod, "bias") and mod.bias is not None:
-            mod.bias.requires_grad_(False)
-            torch.nn.init.zeros_(mod.bias)
-
-    # remove biases from attention layers
-    attn_biases = ['b_Q', 'b_K', 'b_V', 'b_O']
-    for block in m.blocks:
-        for b in attn_biases:
-            mod = getattr(block.attn, b, None)
-            if mod is not None:
-                mod.requires_grad_(False)
-                torch.nn.init.zeros_(mod)
-
-    # remove unembed bias
-    if hasattr(m, "unembed") and hasattr(m.unembed, "b_U") and m.unembed.b_U is not None:
-        m.unembed.b_U.requires_grad_(False)
-        torch.nn.init.zeros_(m.unembed.b_U)
-
-def set_WV_identity_and_freeze(model, d_model):
-    with torch.no_grad():
-        # Create a stack of identity-like matrices for W_V
-        # Each matrix is of shape (d_model, d_head)
-        # We take the first d_head columns of the d_model x d_model identity matrix
-        identity_slice = torch.eye(d_model, model.cfg.d_head)
-        # Repeat for each head
-        W_V_identity = identity_slice.unsqueeze(0).repeat(model.cfg.n_heads, 1, 1)
-        
-        for block in model.blocks:
-            block.attn.W_V.copy_(W_V_identity)
-            block.attn.W_V.requires_grad = False
-
-def set_WO_identity_and_freeze(model, d_model):
-    with torch.no_grad():
-        # Create a stack of identity-like matrices for W_O
-        # Each matrix is of shape (d_head, d_model)
-        # We take the first d_head rows of the d_model x d_model identity matrix
-        identity_slice = torch.eye(model.cfg.d_head, d_model)
-        # Repeat for each head
-        W_O_identity = identity_slice.unsqueeze(0).repeat(model.cfg.n_heads, 1, 1)
-
-        for block in model.blocks:
-            block.attn.W_O.copy_(W_O_identity)
-            block.attn.W_O.requires_grad = False
-
-
-def make_model(n_layers=N_LAYER, n_heads=N_HEAD, d_model=D_MODEL, ln=USE_LN, use_bias=USE_BIAS, freeze_wv=FREEZE_WV, freeze_wo=FREEZE_WO):
-    cfg = HookedTransformerConfig(
-        n_layers = n_layers,
-        n_heads = n_heads,
-        d_model = d_model,
-        d_head = d_model//n_heads,
-        n_ctx=SEQ_LEN,
-        d_vocab=VOCAB,
-        attn_only=True, # no MLP!
-        normalization_type=("LN" if ln else None),
-    )
-    model = HookedTransformer(cfg).to(DEV)
-    if freeze_wv:
-        set_WV_identity_and_freeze(model, d_model)
-    if freeze_wo:
-        set_WO_identity_and_freeze(model, d_model)
-    if not use_bias:
-        strip_bias(model)
-    
-    attach_custom_mask(model)
-    return model
-
-# %%
-# ----- Model saving / loading helpers ------
-def save_model(model, path = MODEL_PATH):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    torch.save(model.state_dict(), path)
-    print(f"Model saved to {path}")
-
-def load_model(path = MODEL_PATH, device = DEV):
-    print("Loading model from", path)
-    model = make_model()
-    model.load_state_dict(
-        torch.load(path, map_location=device)
-    )  # map weights to target device
-    model.eval()
-    return model
-
-# %%
-# ---------- utilities ----------
-def accuracy(m):
-    m.eval()
-    hits = tots = 0
-    with torch.no_grad():
-        for inputs, targets in val_dl:
-            logits = m(inputs.to(DEV))[:, LIST_LEN+1:]  # (batch, 2, vocab)
-            preds = logits.argmax(-1)
-            hits += (preds == targets[:, LIST_LEN+1:].to(DEV)).sum().item()
-            tots += preds.numel()
-    return hits / tots
+# (No local hooks or helpers needed; model_utils handles masking and construction.)
 
 
 def train(m, max_steps=10_000, early_stop_acc=0.999, checkpoints=False, lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY, verbose=True):
@@ -249,7 +118,7 @@ def train(m, max_steps=10_000, early_stop_acc=0.999, checkpoints=False, lr=LEARN
         opt.step()
         opt.zero_grad()
         if (step + 1) % 100 == 0:
-            acc = accuracy(m)
+            acc = accuracy(m, val_dl)
             if acc > early_stop_acc:
                 print(f"Early stopping at step {step + 1} with accuracy {acc:.2%} >= {early_stop_acc:.2%}")
                 break
@@ -259,20 +128,39 @@ def train(m, max_steps=10_000, early_stop_acc=0.999, checkpoints=False, lr=LEARN
             if checkpoints and (step+1) % 50_000 == 0:
                 save_model(m, MODEL_PATH)
             
-    print(f"Final accuracy: {accuracy(m):.2%}")
+    print(f"Final accuracy: {accuracy(m, val_dl):.2%}")
 
 # %%
 # LOAD existing or train and SAVE new model
 load_existing = True  # Set to False to always train a new model
 
 if os.path.exists(MODEL_PATH) and load_existing:
-    model = load_model(MODEL_PATH, device=DEV)
+    model = load_model(
+        MODEL_PATH,
+        n_layers=N_LAYER,
+        n_heads=N_HEAD,
+        d_model=D_MODEL,
+        ln=USE_LN,
+        use_bias=USE_BIAS,
+        freeze_wv=FREEZE_WV,
+        freeze_wo=FREEZE_WO,
+        device=DEV,
+    )
 else:
     if os.path.exists(MODEL_PATH):
         MODEL_PATH = MODEL_PATH.replace(".pt", "_new.pt")
         print(f"Model path already exists. Saving new model to {MODEL_PATH}")
     print("Training model")
-    model = make_model()
+    model = make_model(
+        n_layers=N_LAYER,
+        n_heads=N_HEAD,
+        d_model=D_MODEL,
+        ln=USE_LN,
+        use_bias=USE_BIAS,
+        freeze_wv=FREEZE_WV,
+        freeze_wo=FREEZE_WO,
+        device=DEV,
+    )
     train(model, max_steps=MAX_TRAIN_STEPS, checkpoints=USE_CHECKPOINTING)
     save_model(model, MODEL_PATH)
 
@@ -613,7 +501,7 @@ for l in range(model_with_avg_attn.cfg.n_layers):
         mk_hook(avg_pats[l]), dir="fwd"
     )
 
-print("Accuracy with avg-attn:", accuracy(model_with_avg_attn))
+print("Accuracy with avg-attn:", accuracy(model_with_avg_attn, val_dl))
 
 # %% [markdown]
 # Using the mean attention pattern destroys performance.

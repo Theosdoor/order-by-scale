@@ -1,0 +1,12 @@
+# Project dependencies pinned for reproducibility
+numpy==1.26.4
+torch==2.8.0
+matplotlib==3.9.4
+plotly==6.3.1
+umap-learn==0.5.9.post2
+einops==0.8.1
+pandas>=2.3.3
+tqdm>=4.67.1
+transformer-lens>=2.16.1
+# Jupyter kernel for notebooks
+ipykernel
