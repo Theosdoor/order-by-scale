@@ -27,6 +27,7 @@ from model_utils import (
     load_model,
     save_model,
     accuracy,
+    parse_model_name,
 )
 
 from data import get_dataset
@@ -43,25 +44,30 @@ np.set_printoptions(formatter={'float_kind':float_formatter})
 
 # %%
 # ---------- parameters ----------
-LIST_LEN = 2 # [d1, d2]
-SEQ_LEN = LIST_LEN * 2 + 1 # [d1, d2, SEP, o1, o2]
+MODEL_NAME = '2layer_100dig_64d'  # user-provided (with or without timestamp suffix)
+MODEL_PATH = "models/" + MODEL_NAME + ".pt"
 
-N_DIGITS = 100
-DIGITS = list(range(N_DIGITS)) # 100 digits from 0 to 99
-MASK = N_DIGITS # special masking token for o1 and o2
-SEP = N_DIGITS + 1 # special seperator token for the model to think about the input (+1 to avoid confusion with the last digit)
-VOCAB = len(DIGITS) + 2  # + the special tokens
+# Derive architectural hyperparameters from model name
+try:
+    N_DIGITS, D_MODEL, N_LAYER = parse_model_name(MODEL_NAME)
+except ValueError as e:
+    # Fallback to sane defaults while surfacing the issue
+    print(f"[parse_model_name warning] {e}. Falling back to manual defaults.")
+    N_DIGITS, D_MODEL, N_LAYER = 100, 64, 2
 
-D_MODEL = 64
+LIST_LEN = 2  # [d1, d2]
+SEQ_LEN = LIST_LEN * 2 + 1  # [d1, d2, SEP, o1, o2]
+
+DIGITS = list(range(N_DIGITS))  # 0 .. N_DIGITS-1
+MASK = N_DIGITS  # special masking token for o1 and o2
+SEP = N_DIGITS + 1  # special separator token
+VOCAB = len(DIGITS) + 2  # + special tokens
+
 N_HEAD = 1
-N_LAYER = 2
 USE_LN = False # use layer norm in model
 USE_BIAS = False # use bias in model
 FREEZE_WV = True # no value matrix in attn 
 FREEZE_WO = True # no output matrix in attn (i.e. attn head can only copy inputs to outputs)
-
-MODEL_NAME = '2layer_100dig_64d'
-MODEL_PATH = "models/" + MODEL_NAME + ".pt"
 
 DEV = (
     "cuda"

@@ -14,6 +14,7 @@ __all__ = [
 	"accuracy",
 	"save_model",
 	"load_model",
+	"parse_model_name",
 ]
 
 torch.manual_seed(0)
@@ -249,3 +250,31 @@ def load_model(path, **model_kwargs):
 	)  # map weights to target device
 	model.eval()
 	return model
+
+# ----- Model name parsing helper ------
+def parse_model_name(name: str):
+	"""Parse model naming convention to extract (n_layers, n_digits, d_model).
+
+	Supports forms like:
+	    '2layer_100dig_64d'
+	    '2layer_100dig_64d_20241014-153012'
+
+	Returns:
+	    tuple (n_layers:int, n_digits:int, d_model:int)
+
+	Raises:
+	    ValueError if pattern not recognized.
+	"""
+	import re
+	# Remove an optional trailing timestamp or run id separated by underscore
+	base = name.split('.pt')[0]  # strip accidental file extension
+	# Accept additional suffix segments after the first three components
+	pattern = r"^(?P<layers>\d+)layer_(?P<digits>\d+)dig_(?P<dmodel>\d+)d(?:_.+)?$"
+	m = re.match(pattern, base)
+	if not m:
+		raise ValueError(f"Model name '{name}' does not match expected pattern '<L>layer_<D>dig_<M>d[_...]' ")
+	n_layer = int(m.group('layers'))
+	n_digits = int(m.group('digits'))
+	d_model = int(m.group('dmodel'))
+	print(f"Using model config: {n_layer} layers, {n_digits} digits, {d_model} d_model")
+	return n_digits, d_model, n_layer
