@@ -45,7 +45,7 @@ np.set_printoptions(formatter={'float_kind':float_formatter})
 
 # %%
 # ---------- parameters ----------
-MODEL_NAME = '2layer_100dig_64d'  # user-provided (with or without timestamp suffix)
+MODEL_NAME = '2layer_100dig_64d' 
 MODEL_PATH = "models/" + MODEL_NAME + ".pt"
 
 # Derive architecture parameters from name
@@ -101,7 +101,7 @@ configure_runtime(list_len=LIST_LEN, seq_len=SEQ_LEN, vocab=VOCAB, device=DEV)
 # (queries)
 
 mask_bias, _mask_bias_l0 = build_attention_mask()
-print(mask_bias.cpu()[0][0])
+# print(mask_bias.cpu()[0][0])
 
 # %%
 # ---------- data ----------

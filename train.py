@@ -97,7 +97,7 @@ configure_runtime(list_len=LIST_LEN, seq_len=SEQ_LEN, vocab=VOCAB, device=DEV)
 
 # view mask
 mask_bias, _ = build_attention_mask()
-print(mask_bias.cpu()[0][0])
+# print(mask_bias.cpu()[0][0])
 
 # %%
 # ---------- dataset ----------
@@ -120,11 +120,12 @@ print(f"Train dataset size: {len(train_ds)}, Validation dataset size: {len(val_d
 
 
 # %%
-def train(m, max_steps=10_000, early_stop_acc=0.999, checkpoints=False, lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY, verbose=True):
+def train(m, max_steps=10_000, early_stop_acc=0.999, checkpoints=False, lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY):
     opt = torch.optim.AdamW(m.parameters(), lr, weight_decay=weight_decay)
     ce = torch.nn.CrossEntropyLoss()
     dl = itertools.cycle(train_dl)  # infinite iterator
-    for step in tqdm(range(max_steps), desc="Training"):
+    pbar = tqdm(range(max_steps), desc="Training")
+    for step in pbar:
         inputs, targets = next(dl)
         # get logits/loss for output tokens only
         logits = m(inputs.to(DEV))[:, LIST_LEN+1:].reshape(-1, VOCAB) 
@@ -137,9 +138,11 @@ def train(m, max_steps=10_000, early_stop_acc=0.999, checkpoints=False, lr=LEARN
             if acc > early_stop_acc:
                 print(f"Early stopping at step {step + 1} with accuracy {acc:.2%} >= {early_stop_acc:.2%}")
                 break
-            update_every = max(min(10_000, max_steps//20), 1000)
-            if verbose and (step+1) % update_every == 0:
-                print(f"Step {step + 1}, Loss: {loss.item():.4f}, Accuracy: {acc:.2%}")
+            # Update tqdm bar w/ metrics
+            pbar.set_postfix({
+                "loss": f"{loss.item():.4f}",
+                "acc": f"{acc:.2%}",
+            })
             if checkpoints and (step+1) % 50_000 == 0:
                 save_model(m, MODEL_PATH)
             
@@ -165,10 +168,10 @@ def make_name(d_model, n_layers, ln, use_bias, freeze_wv, freeze_wo):
 
 specs = [
     # {'name': 'd256', 'd_model': 256},
-    # {'name': 'd128', 'd_model': 128, 'weight_decay': 1.0},
+    # {'name': 'd128', 'd_model': 128},
     # {'name': 'd64', 'd_model': 64},
     
-    # {'name': 'd32', 'd_model': 32},
+    {'name': 'd32', 'd_model': 32},
     # {'name': 'd32_ln_bias', 'd_model': 32, 'ln': True, 'use_bias': True},
     # {'name': 'd32_noLN', 'd_model': 32, 'ln': False, 'use_bias': True},
     # {'name': 'd32_noBias', 'd_model': 32, 'ln': True, 'use_bias': False},
@@ -194,26 +197,6 @@ specs = [
 
     # {'name': 'd4', 'd_model': 4},
 ]
-
-from itertools import product
-# specs = []
-# d_model = 128
-# for n_layers, ln, use_bias, freeze_wv, freeze_wo in product(
-#     [2, 3],            # layers
-#     [False, True],     # ln
-#     [False, True],     # use_bias
-#     [False, True],     # freeze_wv
-#     [False, True],     # freeze_wo
-# ):
-#     specs.append({
-#         "name": make_name(d_model, n_layers, ln, use_bias, freeze_wv, freeze_wo),
-#         "d_model": d_model,
-#         "n_layers": n_layers,
-#         "ln": ln,
-#         "use_bias": use_bias,
-#         "freeze_wv": freeze_wv,
-#         "freeze_wo": freeze_wo,
-#     })
 
 # -----------------------
 rows = []
@@ -243,7 +226,7 @@ for spec in specs:
         freeze_wo=full_spec['freeze_wo'],
     )
 
-    train(model, max_steps=50_000, lr=full_spec['lr'], weight_decay=full_spec['weight_decay'], verbose=True)
+    train(model, max_steps=50_000, lr=full_spec['lr'], weight_decay=full_spec['weight_decay'])
     
     # Add all spec parameters to the results
     result = full_spec.copy()
@@ -262,32 +245,6 @@ print(df.to_markdown(index=False))
 # %% [markdown]
 # **RESULTS**
 # 
-# | name                        |   n_layers |   n_heads |   d_model | ln    | use_bias   | freeze_wv   | freeze_wo   |   weight_decay |   val_acc |
-# |:----------------------------|-----------:|----------:|----------:|:------|:-----------|:------------|:------------|---------------:|----------:|
-# | d128_2L_noLN_noBias_uWV_uWO |          2 |         1 |       128 | False | False      | False       | False       |           0.01 |    0.4625 |
-# | d128_2L_noLN_noBias_uWV_fWO |          2 |         1 |       128 | False | False      | False       | True        |           0.01 |    0.4895 |
-# | d128_2L_noLN_noBias_fWV_uWO |          2 |         1 |       128 | False | False      | True        | False       |           0.01 |    0.463  |
-# | d128_2L_noLN_noBias_fWV_fWO |          2 |         1 |       128 | False | False      | True        | True        |           0.01 |    0.9173 |
-# | d128_2L_noLN_Bias_uWV_uWO   |          2 |         1 |       128 | False | True       | False       | False       |           0.01 |    0.868  |
-# | d128_2L_noLN_Bias_uWV_fWO   |          2 |         1 |       128 | False | True       | False       | True        |           0.01 |    0.8945 |
-# | d128_2L_noLN_Bias_fWV_uWO   |          2 |         1 |       128 | False | True       | True        | False       |           0.01 |    0.4645 |
-# | d128_2L_noLN_Bias_fWV_fWO   |          2 |         1 |       128 | False | True       | True        | True        |           0.01 |    0.9183 |
-# | d128_2L_LN_noBias_uWV_uWO   |          2 |         1 |       128 | True  | False      | False       | False       |           0.01 |    0.4743 |
-# | d128_2L_LN_noBias_uWV_fWO   |          2 |         1 |       128 | True  | False      | False       | True        |           0.01 |    0.4607 |
-# | d128_2L_LN_noBias_fWV_uWO   |          2 |         1 |       128 | True  | False      | True        | False       |           0.01 |    0.4632 |
-# | d128_2L_LN_noBias_fWV_fWO   |          2 |         1 |       128 | True  | False      | True        | True        |           0.01 |    0.4485 |
-# | d128_2L_LN_Bias_uWV_uWO     |          2 |         1 |       128 | True  | True       | False       | False       |           0.01 |    0.4733 |
-# | d128_2L_LN_Bias_uWV_fWO     |          2 |         1 |       128 | True  | True       | False       | True        |           0.01 |    0.4647 |
-# | d128_2L_LN_Bias_fWV_uWO     |          2 |         1 |       128 | True  | True       | True        | False       |           0.01 |    0.4755 |
-# | d128_2L_LN_Bias_fWV_fWO     |          2 |         1 |       128 | True  | True       | True        | True        |           0.01 |    0.4602 |
-# 
-# | name   |   n_layers |   n_heads |   d_model | ln    | use_bias   | freeze_wv   | freeze_wo   |   weight_decay |   val_acc |
-# |:-------|-----------:|----------:|----------:|:------|:-----------|:------------|:------------|---------------:|----------:|
-# | d256   |          2 |         1 |       256 | False | False  | True        | True        |           0.01 |    0.8697 |
-# | d128   |          2 |         1 |       128 | False | False      | True        | True        |           0.01 |    0.9038 |
-# | d64    |          2 |         1 |        64 | False | False      | True        | True        |           0.01 |    0.6836 |
-# | d32    |          2 |         1 |        32 | False | False      | True        | True        |           0.01 |    0.4278 |
-# | d16    |          2 |         1 |        16 | False | False      | True        | True        |           0.01 |    0.4497 |
 
 # %%
 # train and SAVE new model

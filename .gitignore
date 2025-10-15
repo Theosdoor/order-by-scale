@@ -10,7 +10,8 @@ fixed_attention_perfs.pkl
 *.user
 *.userosscache
 *.sln.docstates
-*.env
+*.env 
+# ^ includes .env
 
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
