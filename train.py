@@ -48,7 +48,7 @@ MASK = N_DIGITS # special masking token for o1 and o2
 SEP = N_DIGITS+1 # special seperator token for the model to think about the input (+1 to avoid confusion with the last digit)
 VOCAB = len(DIGITS) + 2  # + the special tokens
 
-D_MODEL = 64
+D_MODEL = 4
 N_HEAD = 1
 N_LAYER = 2
 USE_LN = False # use layer norm in model
@@ -171,7 +171,7 @@ specs = [
     # {'name': 'd128', 'd_model': 128},
     # {'name': 'd64', 'd_model': 64},
     
-    {'name': 'd32', 'd_model': 32},
+    # {'name': 'd32', 'd_model': 32},
     # {'name': 'd32_ln_bias', 'd_model': 32, 'ln': True, 'use_bias': True},
     # {'name': 'd32_noLN', 'd_model': 32, 'ln': False, 'use_bias': True},
     # {'name': 'd32_noBias', 'd_model': 32, 'ln': True, 'use_bias': False},
@@ -248,7 +248,7 @@ print(df.to_markdown(index=False))
 
 # %%
 # train and SAVE new model
-print("Training model")
+print(f"Training {MODEL_NAME}")
 model = make_model(
     n_layers=N_LAYER,
     n_heads=N_HEAD,

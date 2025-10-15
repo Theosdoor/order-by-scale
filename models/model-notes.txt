@@ -1,2 +1,4 @@
-v2_2layer_100dig_128d - 92% accuracy
+2layer_100dig_4d - 50% accuracy?? - investigate!
+    ^ just starts around 45% accuracy and cant get above 51% in training
+2layer_100dig_128d - 92% accuracy
 2layer_100dig_64d - 92% acc

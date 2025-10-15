@@ -122,9 +122,8 @@ print("Input:", train_ds[0][0])
 print("Target:", train_ds[0][1])
 print(f"Train dataset size: {len(train_ds)}, Validation dataset size: {len(val_ds)}")
 
-# %%
 # Check train set
-train_ds[:5]
+# train_ds[:5][-1]
 
 # %%
 # LOAD existing model
@@ -748,7 +747,7 @@ print(f"Baseline o2 acc (model o2 logits):    {acc_true_o2:.4f}")
 print(f"Naive acc (o2 := argmax(o1)):         {acc_o1_as_o2:.4f}")
 print(f"Patched acc (o2 := argmax(o1+diff)):  {acc_patched_o2:.4f}")
 # print(f"Both-correct seq acc [o1, o1+diff]:   {both_right:.4f}")
-print(f"[original_o1, o1+diff]:               {generic_acc:.4f} <-- (should be 0.9198)")
+print(f"[original_o1, o1+diff]:               {generic_acc:.4f} <-- (should be {original_accuracy.item():.4f})")
 print(f"True o1 acc:                          {acc_true_o1:.4f} (baseline)")
 print(f"o2 as o1 acc:                         {acc_o2_as_o1:.4f} (should be low)")
 
@@ -1335,6 +1334,7 @@ def analyze_o2_errors(preds, targets, inputs=None, top_k=10):
 analyze_o2_errors(ablated_output_predictions, output_targets, inputs=val_inputs)
 
 # %%
+# Ablate multiple attention patterns at once
 renorm_rows = False
 ablate_in_l0 = [
                 # (2,0),
