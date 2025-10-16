@@ -9,11 +9,6 @@ import copy
 
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-from matplotlib.patches import Ellipse
-
-import umap
 
 import einops
 import pandas as pd, itertools
@@ -23,9 +18,7 @@ from transformer_lens import utils
 from model_utils import (
     configure_runtime,
     build_attention_mask,
-    make_model,
     load_model,
-    save_model,
     accuracy,
     parse_model_name,
 )
@@ -44,7 +37,7 @@ np.set_printoptions(formatter={'float_kind':float_formatter})
 
 # %%
 # ---------- parameters ----------
-MODEL_NAME = '2layer_100dig_64d'
+MODEL_NAME = '2layer_100dig_128d'
 MODEL_PATH = "models/" + MODEL_NAME + ".pt"
 
 # Derive architectural hyperparameters from model name
@@ -458,23 +451,23 @@ att = (
 )
 
 # prune arrows (these ones don't have any effect on the output)
-# if N_LAYER == 2:
-#     att[0][:2] = 0. * att[0][:2]
-#     att[1][:3] = 0. * att[1][:3]
-# elif N_LAYER == 3:
-#     ablate = {
-#         0: [(4, 2), (3, 2), (4, 3), (0, 0), (1, 0)],
-#         1: [(3, 2), (4, 3), (0, 0), (1, 0), (2, 1)],
-#         2: [(0, 0), (1, 0), (2, 0), (2, 1), (3, 0), (4, 0), (4, 1), (4, 2), (4, 3)],
-#     }
-#     # Vectorized assignment using numpy indexing (robust for single/multiple pairs)
-#     for layer, pairs in ablate.items():
-#         if not pairs:
-#             continue
-#         arr = np.array(pairs, dtype=int)  # shape (n_pairs, 2)
-#         qs = arr[:, 0]
-#         ks = arr[:, 1]
-#         att[layer, qs, ks] = 0.0
+if N_LAYER == 2:
+    att[0][:2] = 0. * att[0][:2]
+    att[1][:3] = 0. * att[1][:3]
+elif N_LAYER == 3:
+    ablate = {
+        0: [(4, 2), (3, 2), (4, 3), (0, 0), (1, 0)],
+        1: [(3, 2), (4, 3), (0, 0), (1, 0), (2, 1)],
+        2: [(0, 0), (1, 0), (2, 0), (2, 1), (3, 0), (4, 0), (4, 1), (4, 2), (4, 3)],
+    }
+    # Vectorized assignment using numpy indexing (robust for single/multiple pairs)
+    for layer, pairs in ablate.items():
+        if not pairs:
+            continue
+        arr = np.array(pairs, dtype=int)  # shape (n_pairs, 2)
+        qs = arr[:, 0]
+        ks = arr[:, 1]
+        att[layer, qs, ks] = 0.0
 
 # Collect residual stream (embed + post-resid after each layer)
 resid_keys = ["hook_embed"] + [f"blocks.{l}.hook_resid_post" for l in range(model.cfg.n_layers)]

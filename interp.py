@@ -25,7 +25,6 @@ from transformer_lens import HookedTransformer, HookedTransformerConfig, utils
 from model_utils import (
     configure_runtime,
     build_attention_mask,
-    make_model,
     load_model,
     accuracy,
     parse_model_name,
