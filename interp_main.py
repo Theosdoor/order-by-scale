@@ -142,7 +142,7 @@ loss_fn = torch.nn.CrossEntropyLoss()
 # Check loss on validation set
 val_inputs = val_ds.tensors[0].to(DEV)
 val_targets = val_ds.tensors[1].to(DEV)
-sample_idx = 1  # Use the xth sample in the validation set for comparing predictions
+sample_idx = 0  # Use the xth sample in the validation set for comparing predictions
 sample_list = val_inputs[sample_idx].cpu().numpy()
 
 # --- Calculate Original Loss on last 2 digits ---
@@ -532,21 +532,19 @@ for lx in range(L):
 if N_LAYER == 2:
     delta_acc_pp = {
         # (l, q, k): value_in_pp,
-        (0, 2, 0): -87.4, # sep --> d1
-        (0, 2, 1): -74.3, # sep --> d2
-        (0, 3, 2): -0.2, # o1 --> sep
-        (0, 4, 2): -0.1, # o2 --> sep
-        (1, 3, 2): -48.6, # o1 --> sep (L1)
-        (1, 4, 2): -42.4, # o2 --> sep (L1)
-        (1, 4, 3): -39.0, # o2 --> o1 (L1)
+        (0, 2, 0): -50.9, # sep --> d1
+        (0, 2, 1): -41.0, # sep --> d2
+        (1, 3, 2): -48.9, # o1 --> sep (L1)
+        (1, 4, 2): -50.0, # o2 --> sep (L1)
+        (1, 4, 3): -23.0, # o2 --> o1 (L1)
     }
 elif N_LAYER == 3:
     delta_acc_pp = {
-        (0, 2, 0): -1.3,
-        (0, 2, 1): -49.6,
+        (0, 2, 0): -4,
+        (0, 2, 1): -49.5,
         (1, 2, 0): -49.6,
-        (1, 4, 2): -49.5,
-        (2, 3, 2): -49.5,
+        (1, 4, 2): -49.6,
+        (2, 3, 2): -49.7,
     }
 
 def format_delta_pp(val):
@@ -611,8 +609,6 @@ for l in range(L):
                 continue
             
             label_text = format_delta_pp(delta_val)
-
-            # --- NEW ROBUST LABEL PLACEMENT LOGIC ---
 
             # 1. Calculate the angle of the straight line between nodes in display space
             angle_deg = angle_in_display(ax, x0, y0, x1, y1) -8
@@ -893,7 +889,7 @@ plt.yticks(fontsize=12)
 
 # Set axis limits and apply tight layout
 ax.set_xlim(left=-15, right=30)
-# ax_top.set_xlim(ax.get_xlim()) 
+ax_top.set_xlim(ax.get_xlim()) 
 plt.tight_layout(rect=[0, 0, 1, 0.95])
 plt.show()
 

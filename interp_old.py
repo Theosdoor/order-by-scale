@@ -44,7 +44,7 @@ np.set_printoptions(formatter={'float_kind':float_formatter})
 
 # %%
 # ---------- parameters ----------
-MODEL_NAME = '2layer_100dig_64d' 
+MODEL_NAME = '3layer_100dig_64d' 
 MODEL_PATH = "models/" + MODEL_NAME + ".pt"
 
 # Derive architecture parameters from name
@@ -464,13 +464,11 @@ for lx in range(L):
 # Example: delta_acc_pp[(0, 2, 0)] = -1.7  # ablating L0: q=SEP, k=d1 lowers acc by 1.7 pp
 delta_acc_pp = {
     # (l, q, k): value_in_pp,
-    (0, 2, 0): -87.4, # sep --> d1
-    (0, 2, 1): -74.3, # sep --> d2
-    (0, 3, 2): -0.2, # o1 --> sep
-    (0, 4, 2): -0.1, # o2 --> sep
-    (1, 3, 2): -48.6, # o1 --> sep (L1)
-    (1, 4, 2): -42.4, # o2 --> sep (L1)
-    (1, 4, 3): -37.8, # o2 --> o1 (L1)
+    (0, 2, 0): -50.9, # sep --> d1
+    (0, 2, 1): -41.0, # sep --> d2
+    (1, 3, 2): -48.9, # o1 --> sep (L1)
+    (1, 4, 2): -50.0, # o2 --> sep (L1)
+    (1, 4, 3): -23.0, # o2 --> o1 (L1)
     
     # (0, 2, 0): -1.3,
     # (0, 2, 1): -49.6,
@@ -1338,26 +1336,27 @@ renorm_rows = False
 ablate_in_l0 = [
                 # (2,0),
                 # (2,1),
-                # (4,2),
-                # (3,2),
+                (4,2),
+                (3,2),
                 # below don't change acc
-                (4,3),
                 (0,0),
+                (4,3),
                 (1,0)
                 ]
 ablate_in_l1 = [
-                # (3,2),
+                (3,2),
                 # (4,2),
-                # (4,3),
+                (4,3),
+                # (2,0),
                 # below don't change acc
                 (0,0),
                 (1,0),
-                (2,0),
                 (2,1)
                 
                 ]
 
-ablate_in_l2 = [(0,0),(1,0),(2,0), (2,1), (3,0),  (4,0), (4,1), (4,2), (4,3)]
+ablate_in_l2 = [(0,0),(1,0),(2,0),(2,1), (3,0),  (4,0), (4,1), (4,2), (4,3)]
+# ^ all but (3,2)
 
 # Try ablating multiple layer attention patterns at same time
 def build_qk_mask(positions=None, queries=None, keys=None, seq_len=SEQ_LEN):
@@ -1436,7 +1435,7 @@ def make_pattern_hook(mask_2d: torch.Tensor, head_index=None, set_to=0.0, renorm
 layers_to_ablate = {
     0: build_qk_mask(positions=ablate_in_l0, seq_len=SEQ_LEN),
     1: build_qk_mask(positions=ablate_in_l1, seq_len=SEQ_LEN),
-    # 2: build_qk_mask(positions=ablate_in_l2, seq_len=SEQ_LEN),
+    2: build_qk_mask(positions=ablate_in_l2, seq_len=SEQ_LEN),
 }
 
 # Apply to a single head or all heads
