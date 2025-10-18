@@ -48,9 +48,9 @@ MASK = N_DIGITS # special masking token for o1 and o2
 SEP = N_DIGITS+1 # special seperator token for the model to think about the input (+1 to avoid confusion with the last digit)
 VOCAB = len(DIGITS) + 2  # + the special tokens
 
-D_MODEL = 4
+D_MODEL = 64
 N_HEAD = 1
-N_LAYER = 2
+N_LAYER = 3
 USE_LN = False # use layer norm in model
 USE_BIAS = False # use bias in model
 FREEZE_WV = True # no value matrix in attn 
@@ -295,55 +295,55 @@ print("-" * 80)
 
 # %%
 # Embedding size ablation: run 3 trials per d and save average final accuracy to markdown
-ds = [128, 64, 32, 8]
-n_runs = 0
+# ds = [128, 64, 32, 8]
+# n_runs = 0
 
-abl_rows = []
-for d in ds:
-    print(f"\n=== Embedding ablation: d_model={d} (n_runs={n_runs}) ===")
-    run_accs = []
-    for run in range(n_runs):
-        # Vary seeds per run so results aren't identical
-        torch.manual_seed(run)
-        np.random.seed(run)
+# abl_rows = []
+# for d in ds:
+#     print(f"\n=== Embedding ablation: d_model={d} (n_runs={n_runs}) ===")
+#     run_accs = []
+#     for run in range(n_runs):
+#         # Vary seeds per run so results aren't identical
+#         torch.manual_seed(run)
+#         np.random.seed(run)
 
-        model = make_model(
-            n_layers=N_LAYER,
-            n_heads=N_HEAD,
-            d_model=d,
-            ln=USE_LN,
-            use_bias=USE_BIAS,
-            freeze_wv=FREEZE_WV,
-            freeze_wo=FREEZE_WO,
-        )
+#         model = make_model(
+#             n_layers=N_LAYER,
+#             n_heads=N_HEAD,
+#             d_model=d,
+#             ln=USE_LN,
+#             use_bias=USE_BIAS,
+#             freeze_wv=FREEZE_WV,
+#             freeze_wo=FREEZE_WO,
+#         )
 
-        # Train and record final validation accuracy for this run
-        train(
-            model,
-            max_steps=MAX_TRAIN_STEPS,
-            lr=LEARNING_RATE,
-            weight_decay=WEIGHT_DECAY,
-        )
-        final_acc = accuracy(model, val_dl)
-        run_accs.append(final_acc)
-        print(f"Run {run+1}/{n_runs} final acc: {final_acc:.4f}")
+#         # Train and record final validation accuracy for this run
+#         train(
+#             model,
+#             max_steps=MAX_TRAIN_STEPS,
+#             lr=LEARNING_RATE,
+#             weight_decay=WEIGHT_DECAY,
+#         )
+#         final_acc = accuracy(model, val_dl)
+#         run_accs.append(final_acc)
+#         print(f"Run {run+1}/{n_runs} final acc: {final_acc:.4f}")
 
-    avg_acc = float(np.mean(run_accs)) if len(run_accs) > 0 else 0.0
-    abl_rows.append({
-        'd_model': d,
-        'avg_final_acc': round(avg_acc, 4),
-    })
+#     avg_acc = float(np.mean(run_accs)) if len(run_accs) > 0 else 0.0
+#     abl_rows.append({
+#         'd_model': d,
+#         'avg_final_acc': round(avg_acc, 4),
+#     })
 
-abl_df = pd.DataFrame(abl_rows).sort_values('d_model', ascending=False)
-md_table = abl_df.to_markdown(index=False)
-print("\nAverage final accuracy per d_model:\n")
-print(md_table)
+# abl_df = pd.DataFrame(abl_rows).sort_values('d_model', ascending=False)
+# md_table = abl_df.to_markdown(index=False)
+# print("\nAverage final accuracy per d_model:\n")
+# print(md_table)
 
-# Save to markdown file
-with open("embed_abl.md", "w") as f:
-    f.write("# Embedding Size Ablation (3 runs each)\n\n")
-    f.write(md_table)
-    f.write("\n")
+# # Save to markdown file
+# with open("embed_abl.md", "w") as f:
+#     f.write("# Embedding Size Ablation (3 runs each)\n\n")
+#     f.write(md_table)
+#     f.write("\n")
 
 
 

@@ -37,7 +37,7 @@ np.set_printoptions(formatter={'float_kind':float_formatter})
 
 # %%
 # ---------- parameters ----------
-MODEL_NAME = '2layer_100dig_128d'
+MODEL_NAME = '2layer_100dig_64d'
 MODEL_PATH = "models/" + MODEL_NAME + ".pt"
 
 # Derive architectural hyperparameters from model name
@@ -756,7 +756,7 @@ with torch.no_grad():
 print(f'\nReconstructed accuracy: {(acc_patched_o1 + acc_patched_o2) / 2.0:.3f}')
 
 # %% [markdown]
-# Great! This suggests we have successfully reconstructed the logits as the accuracy is the same using the reconstructed logits to make predictions.
+# Epic! This suggests we have successfully reconstructed the logits as the accuracy is the same using the reconstructed logits to make predictions.
 
 # %%
 # --- Logit Difference Calculation ---
@@ -892,7 +892,7 @@ ax_top.tick_params(axis='y', right=False, labelright=False)
 plt.yticks(fontsize=12)
 
 # Set axis limits and apply tight layout
-# ax.set_xlim(left=-25, right=55)
+ax.set_xlim(left=-15, right=30)
 # ax_top.set_xlim(ax.get_xlim()) 
 plt.tight_layout(rect=[0, 0, 1, 0.95])
 plt.show()
@@ -1105,76 +1105,6 @@ plt.title("Scatter plot of incorrect predictions by d1 and d2 values")
 plt.grid(True)
 plt.tight_layout()
 plt.show()
-
-
-# %%
-# ----- Fig 7 - Performance on fixed attn patterns -----
-import pickle
-from functools import partial
-
-def fixed_attention_score_hook(pattern, hook=None, attn_0=None, attn_1=None):
-    # pattern: [B, H, Q, K]
-    assert (attn_0 is not None) and (attn_1 is not None), "attn_0 and attn_1 must be specified"
-    p0 = torch.as_tensor(attn_0, dtype=pattern.dtype, device=pattern.device)
-    p1 = torch.as_tensor(attn_1, dtype=pattern.dtype, device=pattern.device)
-    s = (p0 + p1).clamp_min(1e-12)
-
-    # Clone and overwrite the SEP (q=2) row to be a valid distribution over {d1=0, d2=1}
-    pattern = pattern.clone()
-    pattern[..., 2, :] = 0.0
-    pattern[..., 2, 0] = p0 / s
-    pattern[..., 2, 1] = p1 / s
-    return pattern
-
-def sequence_accuracy_from_logits(logits, targets):
-    # logits: [B, T, V], targets: [B, T]
-    preds = logits.argmax(dim=-1)[:, -LIST_LEN:]          # only o1, o2
-    targs = targets[:, -LIST_LEN:]
-    return (preds == targs).all(dim=-1).float().mean().item()
-
-# Inputs/targets to evaluate on
-if "all_inputs" not in locals() or "all_targets" not in locals():
-    all_inputs = val_ds.tensors[0].to(DEV)
-    all_targets = val_ds.tensors[1].to(DEV)
-
-steps = 100  # NOTE: 100x100 grid can be slow; reduce for quicker runs
-scores = torch.linspace(0, 1, steps=steps)
-cache_file = "fixed_attention_perfs.pkl"
-
-if os.path.exists(cache_file):
-    with open(cache_file, "rb") as f:
-        perfs = pickle.load(f)
-else:
-    perfs = torch.zeros((steps, steps), dtype=torch.float32)
-    for i, j in tqdm(itertools.product(range(steps), range(steps)), total=steps**2):
-        logits = model.run_with_hooks(
-            all_inputs,
-            return_type="logits",
-            fwd_hooks=[
-                (
-                    "blocks.0.attn.hook_pattern",
-                    partial(
-                        fixed_attention_score_hook,
-                        attn_0=scores[i].item(),
-                        attn_1=scores[j].item(),
-                    ),
-                )
-            ],
-        )
-        perf = sequence_accuracy_from_logits(logits, all_targets)
-        perfs[i, steps - j - 1] = perf  # flip Y so higher j is up
-    with open(cache_file, "wb") as f:
-        pickle.dump(perfs, f)
-
-plt.figure(figsize=(6, 5))
-plt.imshow(perfs.T.cpu(), cmap="viridis", aspect="auto", vmin=0.0)
-plt.colorbar(label="Sequence accuracy")
-plt.xlabel("SEP → d1 attention (L0)")
-plt.ylabel("SEP → d2 attention (L0)")
-plt.title("Validation performance for fixed attention scores")
-plt.tight_layout()
-plt.show()
-
 
 
 # %%
