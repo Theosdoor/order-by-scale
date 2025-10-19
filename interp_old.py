@@ -44,7 +44,7 @@ np.set_printoptions(formatter={'float_kind':float_formatter})
 
 # %%
 # ---------- parameters ----------
-MODEL_NAME = '3layer_100dig_64d' 
+MODEL_NAME = '2layer_100dig_64d' 
 MODEL_PATH = "models/" + MODEL_NAME + ".pt"
 
 # Derive architecture parameters from name
@@ -691,6 +691,9 @@ print(f'Reconstructed accuracy: {(acc_patched_o1 + acc_patched_o2) / 2.0}')
 
 # %%
 # --- Logit Difference Calculation ---
+
+# NOTE - can set alpha_sep_d1 = 1.0, alpha_sep_d2 = 0.0 for better o_2 acc (but worse o_1 acc)
+
 # scale constants
 scaled_pos_o1 = -beta_o2_sep * pos_o1
 scaled_big_d1 = -beta_o2_o1 * alpha_sep_d1 * big_d1

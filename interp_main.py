@@ -963,7 +963,7 @@ if separable:
     print("Margin:", margin)
 
 # %% [markdown]
-# ## UMAP visualization of separable groups
+# ### UMAP visualization of separable groups
 
 # %%
 # Project the positional projections onto 2D with UMAP and color by class (o2 last vs o1 prev)
@@ -989,11 +989,11 @@ Z = umap_model.fit_transform(X_std)
 plt.figure(figsize=(6.8, 6.0), dpi=300)
 mask_last = y == 1
 mask_prev = y == -1
-plt.scatter(Z[mask_last, 0], Z[mask_last, 1], s=16, c="#1f77b4", alpha=0.6, label="o2 (last)")
-plt.scatter(Z[mask_prev, 0], Z[mask_prev, 1], s=16, c="#DC2626", alpha=0.6, label="o1 (prev)")
+plt.scatter(Z[mask_last, 0], Z[mask_last, 1], s=16, c="#1f77b4", alpha=0.6, label="o2")
+plt.scatter(Z[mask_prev, 0], Z[mask_prev, 1], s=16, c="#DC2626", alpha=0.6, label="o1")
 plt.xlabel("UMAP-1")
 plt.ylabel("UMAP-2")
-plt.legend(frameon=True, loc="best")
+plt.legend(frameon=True, loc="best", title="Token")
 plt.grid(True, linestyle=":", alpha=0.5)
 plt.tight_layout()
 plt.show()

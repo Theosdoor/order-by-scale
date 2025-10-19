@@ -356,126 +356,144 @@ if m_for_overview is not None:
 # ## Grid search (paper-ready): LN, Bias, freeze_wv, freeze_wo at d_model=64, n_heads=1, n_layers=2
 
 # %%
-# import itertools as _it
-# import matplotlib.cm as cm
-# import matplotlib.colors as mcolors
+import itertools as _it
+import matplotlib.cm as cm
+import matplotlib.colors as mcolors
 
-# # Fixed architecture for this grid
-# GRID_D_MODEL = 64
-# GRID_N_HEADS = 1
-# GRID_N_LAYERS = 2
+# Fixed architecture for this grid
+GRID_D_MODEL = 64
+GRID_N_HEADS = 1
+GRID_N_LAYERS = 2
 
-# # Search axes
-# grid_lns = [False, True]
-# grid_biases = [False, True]
-# grid_freeze_wv = [False, True]
-# grid_freeze_wo = [False, True]
+# Search axes
+grid_lns = [False, True]
+grid_biases = [False, True]
+grid_freeze_wv = [False, True]
+grid_freeze_wo = [False, True]
 
-# grid_rows = []
+n_runs = 3
 
-# print("\n=== Grid search: d_model=64, n_heads=1, n_layers=2 over LN/Bias/fWV/fWO ===")
-# for ln, bias, fwv, fwo in _it.product(grid_lns, grid_biases, grid_freeze_wv, grid_freeze_wo):
-#     # Deterministic seed per config for reproducibility in the paper
-#     seed = (int(ln) << 3) | (int(bias) << 2) | (int(fwv) << 1) | int(fwo)
-#     torch.manual_seed(seed)
-#     np.random.seed(seed)
+grid_rows = []
 
-#     model = make_model(
-#         n_layers=GRID_N_LAYERS,
-#         n_heads=GRID_N_HEADS,
-#         d_model=GRID_D_MODEL,
-#         ln=ln,
-#         use_bias=bias,
-#         freeze_wv=fwv,
-#         freeze_wo=fwo,
-#     )
+print("\n=== Grid search: d_model=64, n_heads=1, n_layers=2 over LN/Bias/fWV/fWO ===")
+total_configs = len(grid_lns) * len(grid_biases) * len(grid_freeze_wv) * len(grid_freeze_wo)
+for cfg_idx, (ln, bias, fwv, fwo) in enumerate(_it.product(grid_lns, grid_biases, grid_freeze_wv, grid_freeze_wo), start=1):
+    # Base deterministic seed per config for reproducibility
+    base_seed = (int(ln) << 3) | (int(bias) << 2) | (int(fwv) << 1) | int(fwo)
 
-#     # Train with existing helper; uses early stopping on val acc
-#     train(
-#         model,
-#         max_steps=MAX_TRAIN_STEPS,
-#         lr=LEARNING_RATE,
-#         weight_decay=WEIGHT_DECAY,
-#     )
-#     final_acc = float(accuracy(model, val_dl))
+    run_accs = []
+    for run_idx in range(1, n_runs + 1):
+        # Vary seed per run to avoid identical learning dynamics
+        seed = base_seed * 100 + run_idx
+        torch.manual_seed(seed)
+        np.random.seed(seed)
 
-#     grid_rows.append({
-#         'd_model': GRID_D_MODEL,
-#         'n_heads': GRID_N_HEADS,
-#         'n_layers': GRID_N_LAYERS,
-#         'ln': ln,
-#         'bias': bias,
-#         'freeze_wv': fwv,
-#         'freeze_wo': fwo,
-#         'val_acc': round(final_acc, 4),
-#     })
+        model = make_model(
+            n_layers=GRID_N_LAYERS,
+            n_heads=GRID_N_HEADS,
+            d_model=GRID_D_MODEL,
+            ln=ln,
+            use_bias=bias,
+            freeze_wv=fwv,
+            freeze_wo=fwo,
+        )
 
-# grid_df = pd.DataFrame(grid_rows).sort_values(['freeze_wv', 'freeze_wo', 'ln', 'bias']).reset_index(drop=True)
+        # Train for 50k steps per run w/ early stopping at 99.9% acc
+        train(
+            model,
+            max_steps=50_000,
+            lr=LEARNING_RATE,
+            weight_decay=WEIGHT_DECAY,
+            early_stop_acc=0.999,
+        )
+        final_acc = float(accuracy(model, val_dl))
+        run_accs.append(final_acc)
 
-# # Print markdown table (copy-paste ready for paper)
-# md_table = grid_df.to_markdown(index=False)
-# print("\nGrid search results (markdown):\n")
-# print(md_table)
+        # Progress print after every run in requested format
+        print(f"{cfg_idx}:{run_idx} / {total_configs}")
 
-# # Save artifacts for the paper
-# os.makedirs('figs', exist_ok=True)
-# os.makedirs('results', exist_ok=True)
-# timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
-# table_md_path = f"results/gridsearch_d{GRID_D_MODEL}_L{GRID_N_LAYERS}_H{GRID_N_HEADS}_{timestamp}.md"
-# csv_path = f"results/gridsearch_d{GRID_D_MODEL}_L{GRID_N_LAYERS}_H{GRID_N_HEADS}_{timestamp}.csv"
-# with open(table_md_path, 'w') as f:
-#     f.write(f"# Grid search results (d={GRID_D_MODEL}, L={GRID_N_LAYERS}, H={GRID_N_HEADS})\n\n")
-#     f.write(md_table)
-# grid_df.to_csv(csv_path, index=False)
-# print(f"Saved markdown table to {table_md_path} and CSV to {csv_path}")
+    avg_acc = float(np.mean(run_accs)) if len(run_accs) else float('nan')
+    print(f"Config LN={ln}, Bias={bias}, fWV={fwv}, fWO={fwo} ==> Mean val acc over {n_runs} runs: {avg_acc:.4f}")
 
-# # Create a small figure panel: 2x2 subplots for (freeze_wv, freeze_wo), each a 2x2 heatmap over (ln, bias)
-# fig, axes = plt.subplots(2, 2, figsize=(8, 7), constrained_layout=True)
-# vmin, vmax = 0.0, 1.0
-# _last_im = None
+    grid_rows.append({
+        'd_model': GRID_D_MODEL,
+        'n_heads': GRID_N_HEADS,
+        'n_layers': GRID_N_LAYERS,
+        'ln': ln,
+        'bias': bias,
+        'freeze_wv': fwv,
+        'freeze_wo': fwo,
+        'val_acc': round(avg_acc, 4),
+    })
 
-# def _get_acc(ln, bias, fwv, fwo):
-#     row = grid_df[(grid_df['ln']==ln) & (grid_df['bias']==bias) & (grid_df['freeze_wv']==fwv) & (grid_df['freeze_wo']==fwo)]
-#     return float(row['val_acc'].values[0]) if len(row) else float('nan')
+grid_df = pd.DataFrame(grid_rows).sort_values(['freeze_wv', 'freeze_wo', 'ln', 'bias']).reset_index(drop=True)
 
-# fwv_order = [True, False]  # row order
-# fwo_order = [True, False]  # col order
+# Print markdown table (copy-paste ready for paper)
+md_table = grid_df.to_markdown(index=False)
+print("\nGrid search results (markdown):\n")
+print(md_table)
 
-# for i, fwv in enumerate(fwv_order):
-#     for j, fwo in enumerate(fwo_order):
-#         ax = axes[i, j]
-#         # Build 2x2 matrix: rows = [no LN, LN], cols = [no Bias, Bias]
-#         mat = np.array([
-#             [_get_acc(False, False, fwv, fwo), _get_acc(False, True, fwv, fwo)],
-#             [_get_acc(True,  False, fwv, fwo), _get_acc(True,  True, fwv, fwo)],
-#         ])
-#         im = ax.imshow(mat, cmap='viridis', vmin=vmin, vmax=vmax)
-#         _last_im = im
-#         # Annotate cells
-#         for r in range(2):
-#             for c in range(2):
-#                 val = mat[r, c]
-#                 ax.text(c, r, f"{val:.2f}", va='center', ha='center', color='white' if val < 0.6 else 'black', fontsize=10)
-#         ax.set_xticks([0,1], labels=['No Bias', 'Bias'])
-#         ax.set_yticks([0,1], labels=['No LN', 'LN'])
-#         ax.set_title(f"freeze_wv={fwv}, freeze_wo={fwo}")
+# Save artifacts for the paper
+os.makedirs('figs', exist_ok=True)
+os.makedirs('results', exist_ok=True)
+timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+table_md_path = f"results/gridsearch_d{GRID_D_MODEL}_L{GRID_N_LAYERS}_H{GRID_N_HEADS}_{timestamp}.md"
+csv_path = f"results/gridsearch_d{GRID_D_MODEL}_L{GRID_N_LAYERS}_H{GRID_N_HEADS}_{timestamp}.csv"
+with open(table_md_path, 'w') as f:
+    f.write(f"# Grid search results (d={GRID_D_MODEL}, L={GRID_N_LAYERS}, H={GRID_N_HEADS})\n\n")
+    f.write(md_table)
+grid_df.to_csv(csv_path, index=False)
+print(f"Saved markdown table to {table_md_path} and CSV to {csv_path}")
 
-# # Single colorbar using ScalarMappable to avoid unbound issues
-# sm = cm.ScalarMappable(cmap='viridis', norm=mcolors.Normalize(vmin=vmin, vmax=vmax))
-# sm.set_array([])
-# cbar = fig.colorbar(sm, ax=axes.ravel().tolist(), shrink=0.85)
-# cbar.set_label('Validation accuracy')
-# fig.suptitle(f"Grid: d={GRID_D_MODEL}, L={GRID_N_LAYERS}, H={GRID_N_HEADS}")
+# Create a small figure panel: 2x2 subplots for (freeze_wv, freeze_wo), each a 2x2 heatmap over (ln, bias)
+fig, axes = plt.subplots(2, 2, figsize=(8, 7), constrained_layout=True)
+vmin, vmax = 0.0, 1.0
+_last_im = None
 
-# fig_path_png = f"figs/gridsearch_d{GRID_D_MODEL}_L{GRID_N_LAYERS}_H{GRID_N_HEADS}_{timestamp}.png"
-# fig_path_pdf = f"figs/gridsearch_d{GRID_D_MODEL}_L{GRID_N_LAYERS}_H{GRID_N_HEADS}_{timestamp}.pdf"
-# fig.savefig(fig_path_png, dpi=300)
-# fig.savefig(fig_path_pdf)
-# plt.close(fig)
-# print(f"Saved figure to {fig_path_png} and {fig_path_pdf}")
+def _get_acc(ln, bias, fwv, fwo):
+    row = grid_df[(grid_df['ln']==ln) & (grid_df['bias']==bias) & (grid_df['freeze_wv']==fwv) & (grid_df['freeze_wo']==fwo)]
+    return float(row['val_acc'].values[0]) if len(row) else float('nan')
 
-# # Quick summary: best config
-# best_row = grid_df.iloc[grid_df['val_acc'].argmax()]
-# print("\nBest config:")
-# print(best_row.to_dict())
+fwv_order = [True, False]  # row order
+fwo_order = [True, False]  # col order
 
+for i, fwv in enumerate(fwv_order):
+    for j, fwo in enumerate(fwo_order):
+        ax = axes[i, j]
+        # Build 2x2 matrix: rows = [no LN, LN], cols = [no Bias, Bias]
+        mat = np.array([
+            [_get_acc(False, False, fwv, fwo), _get_acc(False, True, fwv, fwo)],
+            [_get_acc(True,  False, fwv, fwo), _get_acc(True,  True, fwv, fwo)],
+        ])
+        im = ax.imshow(mat, cmap='viridis', vmin=vmin, vmax=vmax)
+        _last_im = im
+        # Annotate cells
+        for r in range(2):
+            for c in range(2):
+                val = mat[r, c]
+                ax.text(c, r, f"{val:.2f}", va='center', ha='center', color='white' if val < 0.6 else 'black', fontsize=10)
+        ax.set_xticks([0,1], labels=['No Bias', 'Bias'])
+        ax.set_yticks([0,1], labels=['No LN', 'LN'])
+        ax.set_title(f"freeze_wv={fwv}, freeze_wo={fwo}")
+
+# Single colorbar using ScalarMappable to avoid unbound issues
+sm = cm.ScalarMappable(cmap='viridis', norm=mcolors.Normalize(vmin=vmin, vmax=vmax))
+sm.set_array([])
+cbar = fig.colorbar(sm, ax=axes.ravel().tolist(), shrink=0.85)
+cbar.set_label('Validation accuracy')
+fig.suptitle(f"Grid: d={GRID_D_MODEL}, L={GRID_N_LAYERS}, H={GRID_N_HEADS}")
+
+fig_path_png = f"figs/gridsearch_d{GRID_D_MODEL}_L{GRID_N_LAYERS}_H{GRID_N_HEADS}_{timestamp}.png"
+fig_path_pdf = f"figs/gridsearch_d{GRID_D_MODEL}_L{GRID_N_LAYERS}_H{GRID_N_HEADS}_{timestamp}.pdf"
+fig.savefig(fig_path_png, dpi=300)
+fig.savefig(fig_path_pdf)
+plt.close(fig)
+print(f"Saved figure to {fig_path_png} and {fig_path_pdf}")
+
+# Quick summary: best config
+best_row = grid_df.iloc[grid_df['val_acc'].argmax()]
+print("\nBest config:")
+print(best_row.to_dict())
+
+
+# %%
