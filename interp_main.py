@@ -240,6 +240,7 @@ ablate_in_l1 = [
                 (1,0),
                 (2,0),
                 (2,1),
+                (4,3)
                 ]
 
 ablate_in_l2 = [(0,0),(1,0),(2,0), (2,1), (3,0),  (4,0), (4,1), (4,2), (4,3)]
@@ -367,7 +368,9 @@ def analyze_o2_errors(preds, targets, inputs=None, top_k=10):
     o1_true, o2_true = targets[:, 0], targets[:, 1]
 
     o2_wrong_mask = (o2_pred != o2_true)
+    o1_wrong_mask = (o1_pred != o1_true)
     num_o2_wrong = int(o2_wrong_mask.sum().item())
+    num_o1_wrong = int(o1_wrong_mask.sum().item())
     if num_o2_wrong == 0:
         print("No o2 errors.")
         return
@@ -398,6 +401,7 @@ def analyze_o2_errors(preds, targets, inputs=None, top_k=10):
         if t == SEP: return "SEP"
         return f"tok{t}"
 
+    print(f"o1 wrong: {num_o1_wrong}/{B} ({num_o1_wrong/B:.2%})")
     print(f"o2 wrong: {num_o2_wrong}/{B} ({num_o2_wrong/B:.2%})")
     print(f"P(o2_pred == o1_pred | o2 wrong): {dupes_rate:.2%}")
     print(f"P(o2_pred == o1_true | o2 wrong): {equals_o1_true_rate:.2%}")
@@ -950,13 +954,49 @@ y = np.hstack([np.ones(len(projs_last)), -np.ones(len(projs_prev))])
 clf = SVC(kernel="linear", C=1e6).fit(X, y)
 
 separable = clf.score(X, y) > 0.99
-print("Linearly separable:", separable)
+print(f"Linearly separable: {separable} (accuracy: {clf.score(X, y)})")
 
 if separable:
     w = clf.coef_[0]
     b = clf.intercept_[0]
     margin = 1.0 / np.linalg.norm(w)
     print("Margin:", margin)
+
+# %% [markdown]
+# ## UMAP visualization of separable groups
+
+# %%
+# Project the positional projections onto 2D with UMAP and color by class (o2 last vs o1 prev)
+if 'X' not in locals() or 'y' not in locals():
+    # Fallback: rebuild from previously computed projections
+    X = np.vstack([projs_last, projs_prev])
+    y = np.hstack([np.ones(len(projs_last)), -np.ones(len(projs_prev))])
+
+from sklearn.preprocessing import StandardScaler
+# Robust import for UMAP across umap-learn versions
+try:
+    from umap import UMAP  # preferred if exposed at top-level
+except Exception:  # pragma: no cover - fallback path
+    from umap.umap_ import UMAP
+
+# Standardize features for a more stable embedding
+X_std = StandardScaler().fit_transform(X)
+umap_model = UMAP(n_neighbors=30, min_dist=0.1, n_components=2,
+                  metric="euclidean", random_state=42)
+Z = umap_model.fit_transform(X_std)
+
+# Plot
+plt.figure(figsize=(6.8, 6.0), dpi=300)
+mask_last = y == 1
+mask_prev = y == -1
+plt.scatter(Z[mask_last, 0], Z[mask_last, 1], s=16, c="#1f77b4", alpha=0.6, label="o2 (last)")
+plt.scatter(Z[mask_prev, 0], Z[mask_prev, 1], s=16, c="#DC2626", alpha=0.6, label="o1 (prev)")
+plt.xlabel("UMAP-1")
+plt.ylabel("UMAP-2")
+plt.legend(frameon=True, loc="best")
+plt.grid(True, linestyle=":", alpha=0.5)
+plt.tight_layout()
+plt.show()
 
 # %% [markdown]
 # # Appendices
@@ -982,28 +1022,28 @@ fig, axes = plt.subplots(2, 2, figsize=(10, 8), sharex=True)
 # Row 1
 ax = axes[0, 0]
 ax.hist(attn_sep_d1, bins=30, color="skyblue", edgecolor="black")
-ax.set_xlabel("Attention to d1 (pos 0)")
+ax.set_xlabel("Attention to d1 (pos 1)")
 ax.set_ylabel("Count")
-ax.set_title("Histogram: SEP → d1 (Layer 0)")
+ax.set_title("SEP → d1 (Layer 1)")
 
 ax = axes[0, 1]
 ax.hist(attn_sep_d2, bins=30, color="salmon", edgecolor="black")
-ax.set_xlabel("Attention to d2 (pos 1)")
+ax.set_xlabel("Attention to d2 (pos 2)")
 ax.set_ylabel("")
-ax.set_title("Histogram: SEP → d2 (Layer 0)")
+ax.set_title("SEP → d2 (Layer 1)")
 
 # Row 2
 ax = axes[1, 0]
 ax.hist(attn_o2_sep, bins=30, color="skyblue", edgecolor="black")
-ax.set_xlabel("Attention to SEP (pos 2)")
+ax.set_xlabel("Attention to SEP (pos 3)")
 ax.set_ylabel("Count")
-ax.set_title("Histogram: o2 → SEP (Layer 1)")
+ax.set_title("o2 → SEP (Layer 2)")
 
 ax = axes[1, 1]
 ax.hist(attn_o2_o1, bins=30, color="salmon", edgecolor="black")
-ax.set_xlabel("Attention to o1 (pos 3)")
+ax.set_xlabel("Attention to o1 (pos 4)")
 ax.set_ylabel("")
-ax.set_title("Histogram: o2 → o1 (Layer 1)")
+ax.set_title("o2 → o1 (Layer 2)")
 
 # Apply the shared x-limits to all axes
 for ax in axes.flat:
@@ -1066,8 +1106,8 @@ ax_sc.axvline(0, color="#94A3B8", lw=0.8, ls="--", alpha=0.8)
 ax_sc.axhline(0, color="#94A3B8", lw=0.8, ls="--", alpha=0.8)
 
 # Labels, limits, legend
-ax_sc.set_xlabel("SEP → d1 attention score (L0)")
-ax_sc.set_ylabel("SEP → d2 attention score (L0)")
+ax_sc.set_xlabel("SEP → d1 attention score (Layer 1)")
+ax_sc.set_ylabel("SEP → d2 attention score (Layer 1)")
 ax_sc.set_xlim(x_lo - pad_x, x_hi + pad_x)
 ax_sc.set_ylim(y_lo - pad_y, y_hi + pad_y)
 ax_sc.grid(True, linestyle=":", alpha=0.8)
@@ -1097,7 +1137,7 @@ plt.scatter(
 )
 plt.xlabel("d1 value")
 plt.ylabel("d2 value")
-plt.title("Scatter plot of incorrect predictions by d1 and d2 values")
+# plt.title("Scatter plot of incorrect predictions by d1 and d2 values")
 plt.grid(True)
 plt.tight_layout()
 plt.show()
