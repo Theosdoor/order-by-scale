@@ -17,7 +17,6 @@ This repository implements and analyzes transformers that learn to compress list
 
 - `train.ipynb` - Model training with custom attention masks
 - `interp_main.ipynb` - Mechanistic interpretability analysis
-- `grid_search.py` - Hyperparameter search over model configurations (specifically LIST_LEN and N_LAYERS)
 - `model_utils.py` - Model construction, attention masking, and utilities
 - `data.py` - Dataset generation for list compression task
 - `models/` - Trained model checkpoints
@@ -30,11 +29,7 @@ pip install -r requirements.txt
 
 ## Usage
 
-Training and interpretability analysis are provided in the Jupyter notebooks. For systematic experiments:
-
-```bash
-python grid_search.py --n_layer 2 --d_model 64 --n_digits 100
-```
+Training and interpretability analysis are provided in the Jupyter notebooks (.ipynb files).
 
 ## Dependencies
 
