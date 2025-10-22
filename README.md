@@ -1,28 +1,41 @@
-# Mechanistic Interpretability of Simple Attention-Only Transformer
+# Magnitude-Based Relational Composition in Attention-Only Transformers
 
-A study of list compression/decompression using a minimal transformer architecture.
+Code for the paper: Magnitude-Based Relational Composition in Attention-Only Transformers
 
-PROJECT DIARY (google doc) [here](https://docs.google.com/document/d/1F5Owx5ZKag53pKteuNuVFJ0ztzYpuZwwJYqbJd-9rog/edit?usp=sharing).
+## Overview
 
-## Model Architecture
-- **Input format**: `[i1, i2, SPECIAL, o1, o2]`
-- **Layer 0**: Compresses list into special token representation
-- **Layer 1**: Decompresses special token into output tokens
-- **Configuration**: 2-layer, attention-only (no MLP), single head per layer, W_V = I
+This repository implements and analyzes transformers that learn to compress list representations into a special token and then decompress them. The task structure `[d1, d2, SEP, o1, o2]` enables clean mechanistic analysis of information flow through attention layers.
 
-## Experimental Results so far
+## Architecture
 
-### Sample Input
+- **Attention-only transformer** (no MLPs)
+- **2-3 layers** with single attention head per layer
+- **Constrained weights**: Identity value and matrices (W_V = W_O = I)
+- **Custom attention mask** to enforce causal structure and token-specific attention patterns
+
+## Repository Structure
+
+- `train.ipynb` - Model training with custom attention masks
+- `interp_main.ipynb` - Mechanistic interpretability analysis
+- `grid_search.py` - Hyperparameter search over model configurations (specifically LIST_LEN and N_LAYERS)
+- `model_utils.py` - Model construction, attention masking, and utilities
+- `data.py` - Dataset generation for list compression task
+- `models/` - Trained model checkpoints
+
+## Installation
+
+```bash
+pip install -r requirements.txt
 ```
-[8, 3, 10, 8, 3]
+
+## Usage
+
+Training and interpretability analysis are provided in the Jupyter notebooks. For systematic experiments:
+
+```bash
+python grid_search.py --n_layer 2 --d_model 64 --n_digits 100
 ```
-Where `10` is the special separator token.
 
-... tbc
+## Dependencies
 
-## Key Resources
-- [Tips for Empirical Alignment Research](https://www.lesswrong.com/posts/dZFpEdKyb9Bf4xYn7/tips-for-empirical-alignment-research)
-- [TransformerLens](https://github.com/TransformerLensOrg/TransformerLens)
-  - [Main demo](https://colab.research.google.com/github/neelnanda-io/TransformerLens/blob/main/demos/Main_Demo.ipynb#scrollTo=kCXUl7BUPv08)
-- [Mechinterp glossary](https://dynalist.io/d/n2ZWtnoYHrU1s4vnFSAQ519J)
-- [Grokking mechinterp paper](https://arxiv.org/pdf/2301.05217)
+Built with [TransformerLens](https://github.com/TransformerLensOrg/TransformerLens) for mechanistic interpretability.
