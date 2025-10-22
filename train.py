@@ -88,7 +88,7 @@ configure_runtime(list_len=LIST_LEN, seq_len=SEQ_LEN, vocab=VOCAB, device=DEV)
 # ---------- mask ----------
 # attention mask for [d1, d2, SEP, o1, o2] looks like this:
 # -    d1    d2    SEP    o1    o2   (keys)
-# d1  -inf  -inf   -inf  -inf  -inf
+# d1   0    -inf   -inf  -inf  -inf
 # d2   0    -inf   -inf  -inf  -inf
 # SEP  0      0    -inf  -inf  -inf
 # o1  -inf  -inf    0    -inf   -inf
@@ -97,7 +97,7 @@ configure_runtime(list_len=LIST_LEN, seq_len=SEQ_LEN, vocab=VOCAB, device=DEV)
 
 # view mask
 mask_bias, _ = build_attention_mask()
-# print(mask_bias.cpu()[0][0])
+print(mask_bias.cpu()[0][0])
 
 # %%
 # ---------- dataset ----------
@@ -372,7 +372,7 @@ with open("embed_abl.md", "w") as f:
 # grid_freeze_wv = [False, True]
 # grid_freeze_wo = [False, True]
 
-# n_runs = 3
+# n_runs = 30
 
 # grid_rows = []
 

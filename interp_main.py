@@ -773,7 +773,7 @@ logit_diff = (logit_diff @ W_U )[:,:-2]  # exclude sep and mask token logits
 
 
 # %%
-# ----- Fig 2 - Logit Difference Contributions -----
+# ----- Fig 4 - Logit Difference Contributions -----
 
 # get embeds in d_model space
 term_pos_o2 = W_pos[-1,:].expand(b_size, -1)
@@ -963,7 +963,7 @@ if separable:
     print("Margin:", margin)
 
 # %% [markdown]
-# ### UMAP visualization of separable groups
+# ### Fig 5 - UMAP visualization of separable groups
 
 # %%
 # Project the positional projections onto 2D with UMAP and color by class (o2 last vs o1 prev)
@@ -984,29 +984,30 @@ X_std = StandardScaler().fit_transform(X)
 umap_model = UMAP(n_neighbors=30, min_dist=0.1, n_components=2,
                   metric="euclidean", random_state=42)
 Z = umap_model.fit_transform(X_std)
+# Ensure coordinates are a NumPy array for safe indexing
+Z_np = np.asarray(Z)
 
 # Plot
 plt.figure(figsize=(6.8, 6.0), dpi=300)
 mask_last = y == 1
 mask_prev = y == -1
-plt.scatter(Z[mask_last, 0], Z[mask_last, 1], s=16, c="#1f77b4", alpha=0.6, label="o2")
-plt.scatter(Z[mask_prev, 0], Z[mask_prev, 1], s=16, c="#DC2626", alpha=0.6, label="o1")
+plt.scatter(Z_np[mask_last, 0], Z_np[mask_last, 1], s=16, c="#1f77b4", alpha=0.6, label="o2")
+plt.scatter(Z_np[mask_prev, 0], Z_np[mask_prev, 1], s=16, c="#DC2626", alpha=0.6, label="o1")
 plt.xlabel("UMAP-1")
 plt.ylabel("UMAP-2")
 plt.legend(frameon=True, loc="best", title="Token")
 plt.grid(True, linestyle=":", alpha=0.5)
+
 plt.tight_layout()
 plt.show()
 
 # %% [markdown]
-# # Appendices
+# ## Additional Plots
 
 # %% [markdown]
-# ## D - Attention
+# ----- Fig 2 - Attn histogram -----
 
 # %%
-# ----- Fig 4 - Attn histogram -----
-
 # Extract attention weights (reuse existing cache)
 attn_sep_d1 = cache["pattern", 0].squeeze()[:, 2, 0].cpu().numpy()
 attn_sep_d2 = cache["pattern", 0].squeeze()[:, 2, 1].cpu().numpy()
@@ -1062,9 +1063,10 @@ axes[1, 1].set_ylim(0, ymax_row1)
 plt.tight_layout()
 plt.show()
 
-# %%
-# ------ Fig 5 - SEP attn vs accuracy ------
+# %% [markdown]
+# ------ Fig 3 - SEP attn vs accuracy ------
 
+# %%
 # Run model on all validation data
 all_inputs = val_ds.tensors[0].to(DEV)
 all_targets = val_ds.tensors[1].to(DEV)
@@ -1121,9 +1123,10 @@ print(f"Total samples: {len(all_correct)}")
 print(f"Correct predictions: {all_correct.sum()}")
 print(f"Accuracy: {acc:.3f}")
 
-# %%
-# ---- Fig 6 - scatter plot ----
+# %% [markdown]
+# ---- Fig - scatter plot ----
 
+# %%
 # Indices of incorrect samples
 incorrect_idx = np.where(~all_correct)[0]
 
@@ -1142,5 +1145,10 @@ plt.grid(True)
 plt.tight_layout()
 plt.show()
 
+
+# %% [markdown]
+# This scatter plot shows the model's incorrect predictions ($o_i$) by input values ($d_i$). 
+# There is no clear relationship between the input value and whether the model is more likely to fail.
+# Whilst there is a clear relationship between the attention scores of the $d_i$ positions and misclassifications in Figure 3, this is not due to the input tokens, as shown here.
 
 # %%
