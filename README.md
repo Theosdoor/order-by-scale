@@ -1,6 +1,8 @@
-# Magnitude-Based Relational Composition in Attention-Only Transformers
+# Relative‑Magnitude Relational Composition in Attention‑Only Transformers
 
-Code for the paper: Magnitude-Based Relational Composition in Attention-Only Transformers
+Code for the paper:
+> Farrell, Theo, Patrick Leask, and Noura Al Moubayed. "Order by Scale: Relative‑Magnitude Relational Composition in Attention‑Only Transformers." Socially Responsible and Trustworthy Foundation Models at NeurIPS 2025.
+Link: https://openreview.net/forum?id=vWRVzNtk7W
 
 ## Overview
 
