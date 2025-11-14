@@ -12,7 +12,7 @@ This repository implements and analyzes transformers that learn to compress list
 
 - **Attention-only transformer** (no MLPs)
 - **2-3 layers** with single attention head per layer
-- **Constrained weights**: Identity value and matrices (W_V = W_O = I)
+- **Constrained weights**: Identity value and matrices ($W_V = W_O = I$)
 - **Custom attention mask** to enforce causal structure and token-specific attention patterns
 
 ## Repository Structure
