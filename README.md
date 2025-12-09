@@ -36,3 +36,14 @@ Training and interpretability analysis are provided in the Jupyter notebooks (.i
 ## Dependencies
 
 Built with [TransformerLens](https://github.com/TransformerLensOrg/TransformerLens) for mechanistic interpretability.
+
+## Citation
+```
+@inproceedings{farrell2025order,
+  title={Order by Scale: Relative\nobreakdash-Magnitude Relational Composition in Attention\nobreakdash-Only Transformers},
+  author={Theo Farrell and Patrick Leask and Noura Al Moubayed},
+  booktitle={Socially Responsible and Trustworthy Foundation Models at NeurIPS 2025},
+  year={2025},
+  url={https://openreview.net/forum?id=vWRVzNtk7W}
+}
+```
