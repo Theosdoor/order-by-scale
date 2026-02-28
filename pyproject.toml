@@ -28,6 +28,10 @@ dependencies = [
     "wandb>=0.18.0",
 ]
 
+[project.urls]
+Paper = "https://openreview.net/forum?id=vWRVzNtk7W"
+Repository = "https://github.com/Theosdoor/order-by-scale"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
 
