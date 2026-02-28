@@ -25,15 +25,15 @@ This repository implements and analyzes transformers that learn to compress list
 ## Repository Structure
 
 ```
-train.py            Training script (CLI)
-interp.ipynb        Mechanistic interpretability analysis notebook
-src/
-  model_utils.py    Model construction, attention masking, and utilities
-  datasets.py       Dataset generation for list compression task
-  runtime.py        Shared runtime configuration
-  interp_utils.py   Interpretability helper functions
-models/             Pre-trained model checkpoints
-figures/            Paper figures
+├── train.py              # Training script (CLI)
+├── interp.ipynb          # interpretability analysis / figures notebook
+├── src/
+│   ├── model_utils.py    # Model construction, attention masking, and utilities
+│   ├── datasets.py       # Dataset generation for list compression task
+│   ├── runtime.py        # Shared runtime configuration
+│   └── interp_utils.py   # Interpretability helper functions
+├── models/               # Pre-trained model checkpoints
+└── figures/              # Paper figures
 ```
 
 ## Installation
