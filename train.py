@@ -2,22 +2,12 @@
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
-import torch.nn.functional as F
-
+import itertools
 import os
-import copy
 from datetime import datetime # for unique model naming
 
-import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
-from matplotlib.patches import Ellipse
-
-import einops
-import pandas as pd, itertools
 from tqdm.auto import tqdm
 from dotenv import load_dotenv
-
-from transformer_lens import HookedTransformer, HookedTransformerConfig, utils
 
 from src.runtime import configure_runtime
 from src.model_utils import make_model, build_attention_mask, save_model, accuracy
