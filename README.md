@@ -24,11 +24,17 @@ This repository implements and analyzes transformers that learn to compress list
 
 ## Repository Structure
 
-- `train.ipynb` - Model training with custom attention masks
-- `interp_main.ipynb` - Mechanistic interpretability analysis
-- `model_utils.py` - Model construction, attention masking, and utilities
-- `data.py` - Dataset generation for list compression task
-- `models/` - Trained model checkpoints
+```
+train.py            Training script (CLI)
+interp.ipynb        Mechanistic interpretability analysis notebook
+src/
+  model_utils.py    Model construction, attention masking, and utilities
+  datasets.py       Dataset generation for list compression task
+  runtime.py        Shared runtime configuration
+  interp_utils.py   Interpretability helper functions
+models/             Pre-trained model checkpoints
+figures/            Paper figures
+```
 
 ## Installation
 
@@ -36,9 +42,21 @@ Dependencies are managed with [`uv`](https://docs.astral.sh/uv/). Run `uv sync` 
 
 ## Usage
 
-**Training:** Open `train.ipynb` and run cells top-to-bottom. This trains 2- and 3-layer models on the list compression task and saves checkpoints to `models/`.
+**Training:**
 
-**Interpretability:** Open `interp_main.ipynb` and run cells top-to-bottom. This notebook loads a trained checkpoint from `models/` and performs mechanistic analysis — attention pattern visualisation, ablation studies, and logit lens inspection. Pre-trained checkpoints are included so you can run the analysis without training from scratch.
+```bash
+python3 train.py                        # default: 2-layer, 1-head, d=64, 100 digits
+python3 train.py --n-layers 3 --max-steps 200000
+python3 train.py --help                 # full list of options
+```
+
+Key flags: `--n-layers`, `--n-heads`, `--d-model`, `--n-digits`, `--list-len`, `--ln`, `--wv`, `--wo`, `--mlp`, `--wandb`.
+
+Trained checkpoints are saved to `models/`.
+
+**Interpretability:** Open `interp.ipynb` and run cells top-to-bottom. It loads a checkpoint from `models/` and performs mechanistic analysis — attention pattern visualisation, ablation studies, and logit lens inspection. Pre-trained checkpoints are included so you can run the analysis without training from scratch.
+
+**Weights & Biases:** Copy `.env.example` to `.env` and fill in your credentials, then pass `--wandb` to `train.py`.
 
 ## Dependencies
 

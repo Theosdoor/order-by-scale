@@ -31,7 +31,7 @@ dependencies = [
 ]
 
 [tool.hatch.build.targets.wheel]
-include = ["*.py"]
+packages = ["src"]
 
 [build-system]
 requires = ["hatchling"]

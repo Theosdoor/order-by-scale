@@ -1,7 +1,8 @@
 import os
 import torch
-from dataclasses import dataclass
 from transformer_lens import HookedTransformer, HookedTransformerConfig, utils
+
+from .runtime import _RUNTIME, configure_runtime  # single source of truth
 
 __all__ = [
 	"configure_runtime",
@@ -15,29 +16,9 @@ __all__ = [
 	"save_model",
 	"load_model",
 	"parse_model_name",
+	"parse_model_name_safe",
+	"infer_model_config",
 ]
-
-torch.manual_seed(0)
-
-# ---------- runtime config (optional) ----------
-@dataclass
-class _RuntimeConfig:
-	list_len = None
-	seq_len = None
-	vocab = None
-	device = None
-
-_RUNTIME = _RuntimeConfig()
-
-def configure_runtime(*, list_len, seq_len, vocab, device):
-	"""Set module-level runtime configuration so callers can omit repeating constants.
-
-	All arguments are required except device (defaults to detected DEV).
-	"""
-	_RUNTIME.list_len = list_len
-	_RUNTIME.seq_len = seq_len
-	_RUNTIME.vocab = vocab
-	_RUNTIME.device = device
 
 # ---------- mask ----------
 # attention mask for [d1, d2, SEP, o1, o2] looks like this:
@@ -166,8 +147,14 @@ def make_model(
 	d_model,
 	ln = False,
 	use_bias = False,
-	freeze_wv = True,
-	freeze_wo = True,
+	# wv/wo: use_wv/use_wo is the newer API (True = learn the matrix);
+	# freeze_wv/freeze_wo is the legacy API (True = freeze to identity).
+	# use_wv/use_wo take precedence if provided.
+	use_wv = None,
+	use_wo = None,
+	freeze_wv = None,
+	freeze_wo = None,
+	attn_only = True,
 	seq_len = None,
 	vocab = None,
 	list_len = None,
@@ -180,7 +167,16 @@ def make_model(
 		vocab: vocabulary size
 		list_len: number of input digits (used by mask)
 		device: device to place model on (defaults to DEV)
+		use_wv: if True, learn W_V (default False = freeze to identity)
+		use_wo: if True, learn W_O (default False = freeze to identity)
+		attn_only: if True, no MLP layers (default True)
 	"""
+	# Resolve wv/wo: use_wv/use_wo take precedence; freeze_wv/freeze_wo are legacy aliases
+	if use_wv is None:
+		use_wv = not freeze_wv if freeze_wv is not None else False
+	if use_wo is None:
+		use_wo = not freeze_wo if freeze_wo is not None else False
+
 	# Resolve from explicit args or runtime config
 	if seq_len is None:
 		seq_len = _RUNTIME.seq_len
@@ -198,13 +194,13 @@ def make_model(
 		d_head=d_model // n_heads,
 		n_ctx=seq_len,
 		d_vocab=vocab,
-		attn_only=True,  # no MLP!
+		attn_only=attn_only,
 		normalization_type=("LN" if ln else None),
 	)
 	model = HookedTransformer(cfg).to(dev)
-	if freeze_wv:
+	if not use_wv:
 		set_WV_identity_and_freeze(model, d_model)
-	if freeze_wo:
+	if not use_wo:
 		set_WO_identity_and_freeze(model, d_model)
 	if not use_bias:
 		strip_bias(model)
@@ -251,6 +247,53 @@ def load_model(path, **model_kwargs):
 	model.eval()
 	return model
 
+def infer_model_config(path, device=None):
+	"""Infer model configuration from a checkpoint file.
+
+	Returns a dict with keys: d_model, n_layers, n_heads, d_vocab, n_ctx, list_len,
+	                          attn_only, use_ln, use_bias, use_wv, use_wo
+	"""
+	if device is None:
+		device = _RUNTIME.device or "cpu"
+
+	checkpoint = torch.load(path, map_location=device, weights_only=True)
+
+	d_model = checkpoint['blocks.0.attn.W_Q'].shape[1]
+	n_heads = checkpoint['blocks.0.attn.W_Q'].shape[0]
+	n_layers = sum(1 for k in checkpoint.keys() if k.endswith('.attn.W_Q'))
+	d_vocab = checkpoint['embed.W_E'].shape[0]
+	n_ctx = checkpoint['pos_embed.W_pos'].shape[0]
+
+	if n_ctx % 2 == 0:
+		raise ValueError(f"Invalid n_ctx={n_ctx}: expected odd value (n_ctx = list_len * 2 + 1)")
+	list_len = (n_ctx - 1) // 2
+
+	attn_only = 'blocks.0.mlp.W_in' not in checkpoint
+	use_ln = 'blocks.0.ln1.w' in checkpoint and bool((checkpoint['blocks.0.ln1.w'].abs().sum() > 0).item())
+
+	# W_V frozen to identity if all values match the identity slice
+	try:
+		d_head = checkpoint['blocks.0.attn.W_V'].shape[-1]
+		identity_slice = torch.eye(d_model, d_head)
+		wv = checkpoint['blocks.0.attn.W_V'][0]
+		use_wv = not torch.allclose(wv, identity_slice, atol=1e-5)
+		identity_slice_o = torch.eye(d_head, d_model)
+		wo = checkpoint['blocks.0.attn.W_O'][0]
+		use_wo = not torch.allclose(wo, identity_slice_o, atol=1e-5)
+	except Exception:
+		use_wv = False
+		use_wo = False
+
+	# Detect bias: check if any b_Q is non-zero
+	use_bias = 'blocks.0.attn.b_Q' in checkpoint and bool((checkpoint['blocks.0.attn.b_Q'].abs().sum() > 0).item())
+
+	return dict(
+		d_model=d_model, n_layers=n_layers, n_heads=n_heads, d_vocab=d_vocab,
+		n_ctx=n_ctx, list_len=list_len, attn_only=attn_only,
+		use_ln=use_ln, use_bias=use_bias, use_wv=use_wv, use_wo=use_wo,
+	)
+
+
 # ----- Model name parsing helper ------
 def parse_model_name(name: str):
 	"""Parse model naming convention to extract (n_layers, n_digits, d_model).
@@ -278,3 +321,45 @@ def parse_model_name(name: str):
 	d_model = int(m.group('dmodel'))
 	print(f"Using model config: {n_layer} layers, {n_digits} digits, {d_model} d_model")
 	return n_digits, d_model, n_layer
+
+
+from dataclasses import dataclass as _dataclass
+
+@_dataclass
+class _ParsedModelName:
+	list_len: int
+	n_layers: int
+	n_digits: int
+	d_model: int
+
+
+def parse_model_name_safe(name: str) -> _ParsedModelName:
+	"""Parse model name safely, returning a dataclass with defaults.
+
+	Supports both legacy format ('2layer_100dig_64d') and new format ('L2_H1_D64_V100').
+	Returns a _ParsedModelName with list_len defaulting to 2 if not encoded in name.
+	"""
+	import re
+	base = name.split('.pt')[0]
+
+	# New format: L{layers}_H{heads}_D{dmodel}_V{vocab}[_len{list_len}][_...]
+	m = re.search(r'L(\d+)_H\d+_D(\d+)_V(\d+)', base)
+	if m:
+		n_layers = int(m.group(1))
+		d_model = int(m.group(2))
+		n_digits = int(m.group(3)) - 2  # vocab = digits + MASK + SEP
+		len_m = re.search(r'len(\d+)', base)
+		list_len = int(len_m.group(1)) if len_m else 2
+		return _ParsedModelName(list_len=list_len, n_layers=n_layers, n_digits=n_digits, d_model=d_model)
+
+	# Legacy format: {layers}layer_{digits}dig_{dmodel}d
+	m = re.match(r'^(\d+)layer_(\d+)dig_(\d+)d', base)
+	if m:
+		n_layers = int(m.group(1))
+		n_digits = int(m.group(2))
+		d_model = int(m.group(3))
+		return _ParsedModelName(list_len=2, n_layers=n_layers, n_digits=n_digits, d_model=d_model)
+
+	# Fallback: return safe defaults with a warning
+	print(f"[parse_model_name_safe] Could not parse '{name}', using defaults.")
+	return _ParsedModelName(list_len=2, n_layers=2, n_digits=100, d_model=64)
