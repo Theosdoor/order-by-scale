@@ -1,0 +1,38 @@
+[project]
+name = "order-by-scale"
+version = "0.1.0"
+description = "Relative-magnitude relational composition in an attention-only transformer"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["mechanistic-interpretability", "transformers", "circuit-analysis", "causal-interventions", "ai-safety"]
+authors = [
+    { name = "Theo Farrell", email = "theo.farrell99@outlook.com"},
+    { name = "Patrick Leask" },
+    { name = "Noura Al Moubayed" },
+]
+maintainers = [
+    { name = "Theo Farrell", email = "theo.farrell99@outlook.com"},
+]
+dependencies = [
+    "einops>=0.8.1",
+    "ipykernel>=7.2.0",
+    "matplotlib>=3.9.4",
+    "numpy>=1.26.4",
+    "pandas>=2.3.3",
+    "plotly>=6.3.1",
+    "python-dotenv>=1.0.1",
+    "tabulate>=0.9.0",
+    "torch>=2.8.0",
+    "tqdm>=4.67.1",
+    "transformer-lens>=2.16.1",
+    "umap-learn>=0.5.9.post2",
+    "wandb>=0.18.0",
+]
+
+[tool.hatch.build.targets.wheel]
+include = ["*.py"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
