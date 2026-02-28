@@ -1,6 +1,6 @@
 [project]
 name = "order-by-scale"
-version = "0.1.0"
+version = "0.2.0"
 description = "Relative-magnitude relational composition in an attention-only transformer"
 readme = "README.md"
 requires-python = ">=3.10"
