@@ -11,6 +11,10 @@ Code for the paper:
 
 **TL;DR:** We find a new relational composition method based on relative vector magnitudes in a toy model, challenging the common view that SAE features can be treated as binary on/off switches.
 
+Open `interp.ipynb` in colab:
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Theosdoor/order-by-scale/blob/main/interp.ipynb)
+
 ## Overview
 
 This repository implements and analyzes transformers that learn to compress list representations into a special token and then decompress them. The task structure `[d1, d2, SEP, o1, o2]` enables clean mechanistic analysis of information flow through attention layers.
