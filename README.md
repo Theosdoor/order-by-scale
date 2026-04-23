@@ -6,7 +6,7 @@ Code for the paper:
 <p align="center">
   <img src="figures/attn-flow.png" alt="Information flow in attention-only transformers"/>
   <br/>
-  <em>Figure 1: Information flow visualization. Red arrows show attention moving information between token positions (thickness indicates attention weight). The two-layer model (left, 92% accuracy) performs the desired composition at the SEP token, while the three-layer model (right, 100% accuracy) directly copies between positions, avoiding composition. Node numbers show logit lens activations; edge annotations show ablation impact on validation accuracy.</em>
+  <em>Figure 1: Information flow visualization. Red arrows show attention moving information between token positions (thickness indicates attention weight). The two-layer model (left, 92% accuracy) performs the desired composition at the SEP token, while the three-layer model (right, 100% accuracy) directly copies between positions, avoiding composition. Node numbers show logit lens activations; edge annotations show accuracy drop when that edge is ablated (single-edge counterfactual, no row renormalisation).</em>
 </p>
 
 **TL;DR:** We find a new relational composition method based on relative vector magnitudes in a toy model, challenging the common view that SAE features can be treated as binary on/off switches.
